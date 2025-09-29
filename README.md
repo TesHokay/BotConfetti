@@ -30,32 +30,47 @@ BotConfetti/
 │   └── utils/
 ├── data/ (создаётся автоматически)
 ├── main.py
+├── pyproject.toml
+├── poetry.lock (создаётся локально после `poetry lock`)
 ├── requirements.txt
 └── .env.example
 ```
 
 ## Подготовка окружения
 
-1. Создайте и активируйте виртуальное окружение:
+1. Убедитесь, что Poetry установлен (проверка: `poetry --version`).
+2. Создайте окружение и установите зависимости:
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+   poetry install
    ```
-2. Установите зависимости:
+   При первом запуске команда автоматически создаст виртуальное окружение и
+   установит все зависимости из `pyproject.toml`. Для работы внутри окружения
+   можно использовать `poetry shell` либо префикс `poetry run ...`.
+3. (Опционально) Если требуется совместимость с `pip`, экспортируйте зависимости:
    ```bash
-   pip install -r requirements.txt
+   poetry export --format requirements.txt --output requirements.txt
    ```
-3. Скопируйте файл `.env.example` в `.env` и заполните значения:
+4. Скопируйте файл `.env.example` в `.env` и заполните значения:
    - `BOT_TOKEN` — токен бота от @BotFather.
    - `BOT_ADMIN_IDS` — список chat_id администраторов через запятую (узнать через @userinfobot).
    - при необходимости можно изменить путь к базе данных (`BOT_DATABASE`).
 
-> ⚠️ **Ручные действия:** обязательно впишите актуальный `BOT_TOKEN` и `BOT_ADMIN_IDS` перед запуском.
+> ⚠️ **Ручные действия:**
+> - Обязательно впишите актуальный `BOT_TOKEN` и `BOT_ADMIN_IDS` перед запуском.
+> - После клонирования выполните `poetry lock`/`poetry install` на своём устройстве,
+>   чтобы сформировать локальный `poetry.lock` (в репозитории он не сохранён из-за
+>   ограничений окружения).
 
 ## Запуск
 
 ```bash
-python main.py
+poetry run python main.py
+```
+
+или используйте консольную точку входа:
+
+```bash
+poetry run confetti-bot
 ```
 
 Бот начнёт polling и готов к работе. Остановите сочетанием `Ctrl+C`.
