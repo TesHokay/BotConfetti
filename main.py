@@ -17,6 +17,7 @@ import logging
 import os
 import random
 import re
+from pathlib import Path
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Union
@@ -650,6 +651,8 @@ def main() -> None:  # pragma: no cover - thin wrapper
 
     logging.basicConfig(level=logging.INFO)
 
+    _load_environment_files()
+
     token = _resolve_bot_token()
     if token is None:
         LOGGER.error(
@@ -676,6 +679,57 @@ def _resolve_bot_token() -> Optional[str]:
             token = token.strip()
             if token and token != "TOKEN_PLACEHOLDER":
                 return token
+
+    for key in ("CONFETTI_BOT_TOKEN_FILE", "TELEGRAM_BOT_TOKEN_FILE"):
+        token_path = os.environ.get(key)
+        if token_path:
+            token = _read_token_file(Path(token_path))
+            if token:
+                return token
+    return None
+
+
+def _load_environment_files() -> None:
+    """Populate ``os.environ`` with values from common dotenv files."""
+
+    base_dir = Path(__file__).resolve().parent
+    for filename in (".env", ".env.local"):
+        _apply_env_file(base_dir / filename)
+
+
+def _apply_env_file(path: Path) -> None:
+    if not path.exists() or not path.is_file():
+        return
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError as exc:  # pragma: no cover - filesystem dependent
+        LOGGER.warning("Failed to read environment file %s: %s", path, exc)
+        return
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" not in stripped:
+            LOGGER.debug("Ignoring malformed environment line in %s: %s", path, line)
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        os.environ[key] = value.strip().strip('"').strip("'")
+
+
+def _read_token_file(path: Path) -> Optional[str]:
+    try:
+        token = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:  # pragma: no cover - filesystem dependent
+        LOGGER.warning("Unable to read token file %s: %s", path, exc)
+        return None
+
+    if token and token != "TOKEN_PLACEHOLDER":
+        return token
     return None
 
 
