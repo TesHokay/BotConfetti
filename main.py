@@ -13,6 +13,7 @@ warning which allows the bot to start without the rate limiter.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import random
@@ -262,6 +263,7 @@ class ConfettiTelegramBot:
     token: str
     admin_chat_ids: AdminChatIdsInput = ()
     content_template: BotContent = field(default_factory=BotContent.default)
+    storage_path: Optional[Path] = None
 
     REGISTRATION_PROGRAM = 1
     REGISTRATION_CHILD_NAME = 2
@@ -269,6 +271,7 @@ class ConfettiTelegramBot:
     REGISTRATION_PHONE = 4
     REGISTRATION_TIME = 5
     REGISTRATION_PAYMENT = 6
+    REGISTRATION_CONFIRM_DETAILS = 7
 
     CANCELLATION_PROGRAM = 21
     CANCELLATION_REASON = 22
@@ -277,6 +280,8 @@ class ConfettiTelegramBot:
     REGISTRATION_BUTTON = "📝 Запись / Inscription"
     CANCELLATION_BUTTON = "❗️ Отменить занятие / Annuler"
     REGISTRATION_SKIP_PAYMENT_BUTTON = "⏭ Пока без оплаты"
+    REGISTRATION_CONFIRM_SAVED_BUTTON = "✅ Продолжить"
+    REGISTRATION_EDIT_DETAILS_BUTTON = "✏️ Изменить данные"
     ADMIN_MENU_BUTTON = "🛠 Админ-панель"
     ADMIN_BACK_TO_USER_BUTTON = "⬅️ Пользовательское меню"
     ADMIN_BROADCAST_BUTTON = "📣 Рассылка"
@@ -289,9 +294,7 @@ class ConfettiTelegramBot:
     ADMIN_EDIT_CONTACTS_BUTTON = "📞 Редактировать контакты"
     ADMIN_EDIT_VOCABULARY_BUTTON = "📚 Редактировать словарь"
     ADMIN_CANCEL_KEYWORDS = ("отмена", "annuler", "cancel")
-    ADMIN_CANCEL_PROMPT = (
-        "\n\nЧтобы отменить, напишите «Отмена».\nPour annuler, envoyez «Annuler»."
-    )
+    ADMIN_CANCEL_PROMPT = "\n\nЧтобы отменить, напишите «Отмена»."
 
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание / Horaires"),
@@ -403,7 +406,220 @@ class ConfettiTelegramBot:
         self.admin_chat_ids = normalised
         self._runtime_admin_ids: set[int] = set(normalised)
         self._admin_cancel_tokens: set[str] = {token.lower() for token in self.ADMIN_CANCEL_KEYWORDS}
+        storage_path = self.storage_path or Path(os.environ.get("CONFETTI_STORAGE_PATH", "data/confetti_state.json"))
+        self.storage_path = storage_path.expanduser()
+        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+        self._persistent_store: dict[str, Any] = self._load_persistent_state()
+        dynamic_admins = self._persistent_store.get("dynamic_admins")
+        if isinstance(dynamic_admins, set):
+            self._runtime_admin_ids.update(dynamic_admins)
+        self._storage_dirty = False
         self._bot_username: Optional[str] = None
+
+    # ------------------------------------------------------------------
+    # Persistence helpers
+
+    def _load_persistent_state(self) -> dict[str, Any]:
+        """Load bot state from disk and normalise structures."""
+
+        data: dict[str, Any] = {}
+
+        if self.storage_path.exists():
+            try:
+                raw = json.loads(self.storage_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    data.update(raw)
+            except Exception as exc:  # pragma: no cover - filesystem dependant
+                LOGGER.warning("Не удалось загрузить сохранённое состояние: %s", exc)
+
+        content_payload = data.get("content")
+        if isinstance(content_payload, dict):
+            content = self._deserialize_content(content_payload)
+        else:
+            content = self.content_template.copy()
+        data["content"] = content
+
+        registrations = data.get("registrations")
+        if not isinstance(registrations, list):
+            data["registrations"] = []
+
+        cancellations = data.get("cancellations")
+        if not isinstance(cancellations, list):
+            data["cancellations"] = []
+
+        known_raw = data.get("known_chats")
+        known: set[int] = set()
+        if isinstance(known_raw, (list, set, tuple)):
+            for item in known_raw:
+                try:
+                    known.add(_coerce_chat_id(item))
+                except ValueError:
+                    continue
+        data["known_chats"] = known
+
+        admins_raw = data.get("dynamic_admins")
+        admins: set[int] = set()
+        if isinstance(admins_raw, (list, set, tuple)):
+            for item in admins_raw:
+                try:
+                    admins.add(_coerce_chat_id(item))
+                except ValueError:
+                    continue
+        data["dynamic_admins"] = admins
+
+        profiles = data.get("user_profiles")
+        if not isinstance(profiles, dict):
+            profiles = {}
+        else:
+            normalised_profiles: dict[str, dict[str, str]] = {}
+            for key, value in profiles.items():
+                if isinstance(key, str) and isinstance(value, dict):
+                    normalised_profiles[key] = {
+                        "child_name": str(value.get("child_name", "")),
+                        "class": str(value.get("class", "")),
+                        "phone": str(value.get("phone", "")),
+                    }
+            profiles = normalised_profiles
+        data["user_profiles"] = profiles
+
+        exports = data.get("exports")
+        if not isinstance(exports, dict):
+            data["exports"] = {}
+
+        return data
+
+    def _serialize_persistent_store(self) -> dict[str, Any]:
+        """Prepare the in-memory state for JSON serialisation."""
+
+        payload: dict[str, Any] = {}
+
+        for key, value in self._persistent_store.items():
+            if key == "content" and isinstance(value, BotContent):
+                payload[key] = self._serialize_content(value)
+            elif key in {"known_chats", "dynamic_admins"} and isinstance(value, set):
+                payload[key] = sorted(value)
+            elif key == "user_profiles" and isinstance(value, dict):
+                payload[key] = value
+            else:
+                payload[key] = value
+
+        return payload
+
+    def _save_persistent_state(self) -> None:
+        """Persist the current state to disk."""
+
+        try:
+            serializable = self._serialize_persistent_store()
+            tmp_path = self.storage_path.with_suffix(self.storage_path.suffix + ".tmp")
+            with tmp_path.open("w", encoding="utf-8") as handle:
+                json.dump(serializable, handle, ensure_ascii=False, indent=2)
+            tmp_path.replace(self.storage_path)
+            self._storage_dirty = False
+        except Exception as exc:  # pragma: no cover - filesystem dependant
+            LOGGER.warning("Не удалось сохранить состояние бота: %s", exc)
+
+    def _serialize_content(self, content: BotContent) -> dict[str, Any]:
+        return {
+            "schedule": self._serialize_content_block(content.schedule),
+            "about": self._serialize_content_block(content.about),
+            "teachers": self._serialize_content_block(content.teachers),
+            "payment": self._serialize_content_block(content.payment),
+            "album": self._serialize_content_block(content.album),
+            "contacts": self._serialize_content_block(content.contacts),
+            "vocabulary": [dict(entry) for entry in content.vocabulary],
+        }
+
+    def _serialize_content_block(self, block: ContentBlock) -> dict[str, Any]:
+        return {
+            "text": block.text,
+            "media": [
+                {
+                    "kind": item.kind,
+                    "file_id": item.file_id,
+                    "caption": item.caption,
+                }
+                for item in block.media
+            ],
+        }
+
+    def _deserialize_content(self, payload: dict[str, Any]) -> BotContent:
+        content = self.content_template.copy()
+        for field_name in self.CONTENT_LABELS:
+            block_payload = payload.get(field_name)
+            if isinstance(block_payload, dict):
+                setattr(content, field_name, self._deserialize_content_block(block_payload))
+        vocabulary = payload.get("vocabulary")
+        if isinstance(vocabulary, list):
+            content.vocabulary = [entry for entry in vocabulary if isinstance(entry, dict)]
+        return content
+
+    def _deserialize_content_block(self, payload: dict[str, Any]) -> ContentBlock:
+        text = str(payload.get("text", ""))
+        media_payload = payload.get("media")
+        media: list[MediaAttachment] = []
+        if isinstance(media_payload, list):
+            for item in media_payload:
+                if not isinstance(item, dict):
+                    continue
+                kind = item.get("kind")
+                file_id = item.get("file_id")
+                if not kind or not file_id:
+                    continue
+                media.append(
+                    MediaAttachment(
+                        kind=str(kind),
+                        file_id=str(file_id),
+                        caption=item.get("caption"),
+                    )
+                )
+        return ContentBlock(text=text, media=media)
+
+    def _get_user_defaults(self, user: Any | None) -> dict[str, str]:
+        if user is None:
+            return {}
+        user_id = getattr(user, "id", None)
+        if user_id is None:
+            return {}
+        try:
+            user_key = str(int(user_id))
+        except (TypeError, ValueError):
+            return {}
+        profiles = self._persistent_store.setdefault("user_profiles", {})
+        if not isinstance(profiles, dict):
+            profiles = {}
+            self._persistent_store["user_profiles"] = profiles
+        entry = profiles.get(user_key)
+        if isinstance(entry, dict):
+            return {
+                "child_name": entry.get("child_name", ""),
+                "class": entry.get("class", ""),
+                "phone": entry.get("phone", ""),
+            }
+        return {}
+
+    def _update_user_defaults(self, user: Any | None, data: dict[str, Any]) -> bool:
+        if user is None:
+            return False
+        user_id = getattr(user, "id", None)
+        if user_id is None:
+            return False
+        try:
+            user_key = str(int(user_id))
+        except (TypeError, ValueError):
+            return False
+        profiles = self._persistent_store.setdefault("user_profiles", {})
+        if not isinstance(profiles, dict):
+            profiles = {}
+            self._persistent_store["user_profiles"] = profiles
+        new_entry = {
+            "child_name": str(data.get("child_name", "")),
+            "class": str(data.get("class", "")),
+            "phone": str(data.get("phone", "")),
+        }
+        if profiles.get(user_key) == new_entry:
+            return False
+        profiles[user_key] = new_entry
+        return True
 
     def build_profile(self, chat: Any, user: Any | None = None) -> "UserProfile":
         """Return the appropriate profile for ``chat`` and optional ``user``."""
@@ -473,8 +689,21 @@ class ConfettiTelegramBot:
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_class),
                 ],
                 self.REGISTRATION_PHONE: [
-                    MessageHandler(filters.CONTACT, self._registration_collect_phone_contact),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_phone_text),
+                ],
+                self.REGISTRATION_CONFIRM_DETAILS: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.REGISTRATION_CONFIRM_SAVED_BUTTON)),
+                        self._registration_accept_saved_details,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.REGISTRATION_EDIT_DETAILS_BUTTON)),
+                        self._registration_request_details_update,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._registration_cancel,
+                    ),
                 ],
                 self.REGISTRATION_TIME: [
                     MessageHandler(
@@ -602,22 +831,16 @@ class ConfettiTelegramBot:
     def _application_data(self, context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
         """Return application-level storage across PTB versions."""
 
-        if hasattr(context, "application_data"):
-            return context.application_data  # type: ignore[attr-defined]
+        storage = self._persistent_store
 
-        if hasattr(context, "bot_data"):
-            return context.bot_data  # type: ignore[attr-defined]
+        # Expose the shared storage on context objects for compatibility, ignoring failures.
+        for attribute in ("application_data", "bot_data"):
+            if hasattr(context, attribute):
+                try:
+                    setattr(context, attribute, storage)
+                except Exception:  # pragma: no cover - attribute may be read-only
+                    pass
 
-        application = getattr(context, "application", None)
-        if application is not None and hasattr(application, "bot_data"):
-            return application.bot_data  # type: ignore[attr-defined]
-
-        # Fallback to a dedicated attribute to avoid repeated lookups if nothing matches.
-        storage = getattr(context, "_fallback_application_data", None)
-        if isinstance(storage, dict):
-            return storage
-
-        storage = {}
         setattr(context, "_fallback_application_data", storage)
         return storage
 
@@ -644,9 +867,12 @@ class ConfettiTelegramBot:
         existing = storage.get("dynamic_admins")
         if not isinstance(existing, set):
             existing = self._refresh_admin_cache(context)
+        if admin_id in existing:
+            return existing
         existing.add(admin_id)
         storage["dynamic_admins"] = existing
         self._runtime_admin_ids.add(admin_id)
+        self._save_persistent_state()
         return existing
 
     def _remember_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -655,7 +881,10 @@ class ConfettiTelegramBot:
         if not chat:
             return
         known = self._get_known_chats(context)
-        known.add(_coerce_chat_id_from_object(chat))
+        chat_id = _coerce_chat_id_from_object(chat)
+        if chat_id not in known:
+            known.add(chat_id)
+            self._save_persistent_state()
 
     def _get_known_chats(self, context: ContextTypes.DEFAULT_TYPE) -> set[int]:
         store = self._application_data(context).setdefault("known_chats", set())
@@ -669,9 +898,11 @@ class ConfettiTelegramBot:
                 except ValueError:
                     continue
             self._application_data(context)["known_chats"] = converted
+            self._save_persistent_state()
             return converted
         converted: set[int] = set()
         self._application_data(context)["known_chats"] = converted
+        self._save_persistent_state()
         return converted
 
     def _get_content(self, context: ContextTypes.DEFAULT_TYPE) -> BotContent:
@@ -686,9 +917,11 @@ class ConfettiTelegramBot:
             # Backward compatibility if someone serialised a dict previously.
             restored = self.content_template.copy()
             self._application_data(context)["content"] = restored
+            self._save_persistent_state()
             return restored
         fresh = self.content_template.copy()
         self._application_data(context)["content"] = fresh
+        self._save_persistent_state()
         return fresh
 
     def _store_registration(
@@ -717,10 +950,19 @@ class ConfettiTelegramBot:
             else data.get("payment_media", []),
         }
         registrations = self._application_data(context).setdefault("registrations", [])
+        needs_save = False
         if isinstance(registrations, list):
             registrations.append(record)
+            needs_save = True
         else:
             self._application_data(context)["registrations"] = [record]
+            needs_save = True
+
+        if self._update_user_defaults(user, data):
+            needs_save = True
+
+        if needs_save:
+            self._save_persistent_state()
 
     async def _store_cancellation(
         self,
@@ -747,6 +989,8 @@ class ConfettiTelegramBot:
             storage.append(record)
         else:
             self._application_data(context)["cancellations"] = [record]
+
+        self._save_persistent_state()
 
         admin_message = (
             "🚫 Отмена занятия\n"
@@ -1026,13 +1270,60 @@ class ConfettiTelegramBot:
 
     async def _registration_collect_program(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         program_label = update.message.text
-        context.user_data.setdefault("registration", {})["program"] = program_label
+        registration = context.user_data.setdefault("registration", {})
+        registration["program"] = program_label
+
+        defaults = self._get_user_defaults(update.effective_user)
+        if defaults:
+            for key in ("child_name", "class", "phone"):
+                value = defaults.get(key)
+                if value:
+                    registration[key] = value
+
+        if not registration.get("child_name"):
+            await self._reply(
+                update,
+                "Merci ! / Спасибо! Напишите, пожалуйста, имя и фамилию ребёнка.",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return self.REGISTRATION_CHILD_NAME
+
+        if not registration.get("class"):
+            await self._reply(
+                update,
+                (
+                    f"Мы сохранили имя: {registration.get('child_name', '—')}.\n"
+                    "🇫🇷 Indiquez la classe, s'il vous plaît.\n🇷🇺 Укажите, пожалуйста, класс."
+                ),
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return self.REGISTRATION_CLASS
+
+        if not registration.get("phone"):
+            await self._reply(
+                update,
+                (
+                    f"Мы сохранили имя и класс: {registration.get('child_name', '—')}"
+                    f" ({registration.get('class', '—')}).\n"
+                    "🇫🇷 Écrivez le numéro de téléphone.\n"
+                    "🇷🇺 Введите номер телефона."
+                ),
+                reply_markup=self._phone_keyboard(),
+            )
+            return self.REGISTRATION_PHONE
+
+        message = (
+            "Мы заполнили данные из вашей предыдущей заявки:\n"
+            f"👦 Имя: {registration.get('child_name', '—')} ({registration.get('class', '—')})\n"
+            f"📱 Телефон: {registration.get('phone', '—')}\n\n"
+            "Нажмите «Продолжить», если всё верно, или «Изменить данные», чтобы указать новые значения."
+        )
         await self._reply(
             update,
-            "Merci ! / Спасибо! Напишите, пожалуйста, имя и фамилию ребёнка.",
-            reply_markup=ReplyKeyboardRemove(),
+            message,
+            reply_markup=self._saved_details_keyboard(),
         )
-        return self.REGISTRATION_CHILD_NAME
+        return self.REGISTRATION_CONFIRM_DETAILS
 
     async def _registration_collect_child_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data.setdefault("registration", {})["child_name"] = update.message.text.strip()
@@ -1046,15 +1337,22 @@ class ConfettiTelegramBot:
         context.user_data.setdefault("registration", {})["class"] = update.message.text.strip()
         await self._reply(
             update,
-            "🇫🇷 Envoyez le numéro de téléphone (bouton en bas).\n"
-            "🇷🇺 Отправьте номер телефона (кнопка внизу).",
+            "🇫🇷 Écrivez le numéro de téléphone.\n"
+            "🇷🇺 Введите номер телефона вручную.",
             reply_markup=self._phone_keyboard(),
         )
         return self.REGISTRATION_PHONE
 
     def _phone_keyboard(self) -> ReplyKeyboardMarkup:
         keyboard = [
-            [KeyboardButton("📱 Отправить номер", request_contact=True)],
+            [KeyboardButton(self.MAIN_MENU_BUTTON)],
+        ]
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+    def _saved_details_keyboard(self) -> ReplyKeyboardMarkup:
+        keyboard = [
+            [KeyboardButton(self.REGISTRATION_CONFIRM_SAVED_BUTTON)],
+            [KeyboardButton(self.REGISTRATION_EDIT_DETAILS_BUTTON)],
             [KeyboardButton(self.MAIN_MENU_BUTTON)],
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
@@ -1066,13 +1364,6 @@ class ConfettiTelegramBot:
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
-    async def _registration_collect_phone_contact(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        phone_number = update.message.contact.phone_number
-        context.user_data.setdefault("registration", {})["phone"] = phone_number
-        return await self._prompt_time_of_day(update)
-
     async def _registration_collect_phone_text(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
@@ -1081,6 +1372,24 @@ class ConfettiTelegramBot:
             return await self._registration_cancel(update, context)
         context.user_data.setdefault("registration", {})["phone"] = text
         return await self._prompt_time_of_day(update)
+
+    async def _registration_accept_saved_details(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        return await self._prompt_time_of_day(update)
+
+    async def _registration_request_details_update(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("child_name", "class", "phone"):
+            registration.pop(key, None)
+        await self._reply(
+            update,
+            "Merci ! / Спасибо! Напишите, пожалуйста, имя и фамилию ребёнка.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return self.REGISTRATION_CHILD_NAME
 
     async def _prompt_time_of_day(self, update: Update) -> int:
         await self._reply(
@@ -1246,7 +1555,7 @@ class ConfettiTelegramBot:
         self._store_registration(update, context, data, attachments)
 
         admin_message = (
-            "🆕 Новая заявка / Nouvelle inscription\n"
+            "🆕 Новая заявка\n"
             f"📚 Программа: {data.get('program', '—')}\n"
             f"👦 Участник: {data.get('child_name', '—')} ({data.get('class', '—')})\n"
             f"📱 Телефон: {data.get('phone', '—')}\n"
@@ -1283,7 +1592,7 @@ class ConfettiTelegramBot:
                 context.chat_data.pop("pending_admin_action", None)
                 await self._reply(
                     update,
-                    "Действие отменено.\nL'action est annulée.",
+                    "Действие отменено.\n",
                     reply_markup=self._admin_menu_markup(),
                 )
                 return
@@ -1309,8 +1618,7 @@ class ConfettiTelegramBot:
                 context.chat_data["pending_admin_action"] = {"type": "broadcast"}
                 await self._reply(
                     update,
-                    "Отправьте сообщение или медиа для рассылки.\n"
-                    "Envoyez le message ou les médias à diffuser."
+                    "Отправьте сообщение или медиа для рассылки."
                     + self.ADMIN_CANCEL_PROMPT,
                     reply_markup=ReplyKeyboardRemove(),
                 )
@@ -1323,7 +1631,6 @@ class ConfettiTelegramBot:
                 await self._reply(
                     update,
                     "Введите chat_id нового администратора.\n"
-                    "Entrez le chat_id de l'administrateur."
                     + self.ADMIN_CANCEL_PROMPT,
                     reply_markup=ReplyKeyboardRemove(),
                 )
@@ -1415,8 +1722,7 @@ class ConfettiTelegramBot:
             else:
                 await self._reply(
                     update,
-                    "Не удалось определить редактируемый блок.\n"
-                    "Impossible d'identifier la section à modifier.",
+                    "Не удалось определить редактируемый блок.",
                     reply_markup=self._admin_menu_markup(),
                 )
             return
@@ -1430,7 +1736,7 @@ class ConfettiTelegramBot:
             return
         await self._reply(
             update,
-            "Неизвестное действие администратора.\nAction administrateur inconnue.",
+            "Неизвестное действие администратора.",
             reply_markup=self._admin_menu_markup(),
         )
 
@@ -1442,8 +1748,7 @@ class ConfettiTelegramBot:
         except ValueError:
             await self._reply(
                 update,
-                "Пожалуйста, отправьте числовой chat_id администратора.\n"
-                "Veuillez envoyer un identifiant numérique."
+                "Пожалуйста, отправьте числовой chat_id администратора."
                 + self.ADMIN_CANCEL_PROMPT,
                 reply_markup=ReplyKeyboardRemove(),
             )
@@ -1453,17 +1758,13 @@ class ConfettiTelegramBot:
         if admin_id in self._runtime_admin_ids:
             await self._reply(
                 update,
-                "Этот chat_id уже обладает правами администратора.\n"
-                "Cet identifiant est déjà administrateur.",
+                "Этот chat_id уже обладает правами администратора.",
                 reply_markup=self._admin_menu_markup(),
             )
             return
 
         self._store_dynamic_admin(context, admin_id)
-        message = (
-            f"✅ Администратор {admin_id} добавлен.\n"
-            "✅ Nouvel administrateur ajouté."
-        )
+        message = f"✅ Администратор {admin_id} добавлен."
         await self._reply(update, message, reply_markup=self._admin_menu_markup())
 
         await self._notify_admins(
@@ -1483,7 +1784,7 @@ class ConfettiTelegramBot:
         if not hasattr(content, field):
             await self._reply(
                 update,
-                "Этот раздел нельзя редактировать.\nCette section ne peut pas être modifiée.",
+                "Этот раздел нельзя редактировать.",
                 reply_markup=self._admin_menu_markup(),
             )
             return
@@ -1528,7 +1829,6 @@ class ConfettiTelegramBot:
         message = (
             "Отправьте новые слова в формате: слово|эмодзи|перевод|пример FR|пример RU."
             "\nКаждое слово — на отдельной строке."
-            "\nEnvoyez les entrées sous forme: mot|emoji|traduction|phrase FR|phrase RU."
             f"\n\nТекущий список:\n{sample}"
         )
         await self._reply(update, message + self.ADMIN_CANCEL_PROMPT, reply_markup=ReplyKeyboardRemove())
@@ -1544,7 +1844,7 @@ class ConfettiTelegramBot:
         if not known_chats:
             await self._reply(
                 update,
-                "Пока нет чатов для рассылки.\nAucun chat connu pour la diffusion.",
+                "Пока нет чатов для рассылки.",
                 reply_markup=self._admin_menu_markup(),
             )
             return
@@ -1564,10 +1864,7 @@ class ConfettiTelegramBot:
                 LOGGER.warning("Failed to send broadcast to %s: %s", chat_id, exc)
                 failures.append(str(chat_id))
 
-        result = (
-            f"Рассылка завершена: {successes} из {len(known_chats)} чатов.\n"
-            f"Diffusion envoyée: {successes} / {len(known_chats)}."
-        )
+        result = f"Рассылка завершена: {successes} из {len(known_chats)} чатов."
         if failures:
             result += "\nНе удалось доставить сообщения в чаты: " + ", ".join(failures)
         await self._reply(update, result, reply_markup=self._admin_menu_markup())
@@ -1579,7 +1876,7 @@ class ConfettiTelegramBot:
         if not isinstance(registrations, list) or not registrations:
             await self._reply(
                 update,
-                "Заявок пока нет.\nAucune demande enregistrée pour l'instant.",
+                "Заявок пока нет.",
                 reply_markup=self._admin_menu_markup(),
             )
             return
@@ -1688,6 +1985,8 @@ class ConfettiTelegramBot:
                 }
             }
 
+        self._save_persistent_state()
+
         return export_path, generated_at
 
     def _format_registrations_preview(
@@ -1788,7 +2087,7 @@ class ConfettiTelegramBot:
         if not hasattr(content, field):
             await self._reply(
                 update,
-                "Этот раздел нельзя редактировать.\nCette section ne peut pas être modifiée.",
+                "Этот раздел нельзя редактировать.",
                 reply_markup=self._admin_menu_markup(),
             )
             return
@@ -1805,7 +2104,7 @@ class ConfettiTelegramBot:
         label = self.CONTENT_LABELS.get(field, field)
         await self._reply(
             update,
-            "Раздел обновлён!\nLa section a été mise à jour.",
+            "Раздел обновлён!",
             reply_markup=self._admin_menu_markup(),
         )
         await self._notify_admins(
@@ -1813,6 +2112,7 @@ class ConfettiTelegramBot:
             f"🛠 Раздел «{label}» был обновлён администратором.",
             media=attachments or None,
         )
+        self._save_persistent_state()
 
     async def _admin_apply_vocabulary_update(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str
@@ -1821,7 +2121,7 @@ class ConfettiTelegramBot:
         if not lines:
             await self._reply(
                 update,
-                "Отправьте хотя бы одну строку с данными.\nVeuillez fournir au moins une entrée."
+                "Отправьте хотя бы одну строку с данными."
                 + self.ADMIN_CANCEL_PROMPT,
                 reply_markup=ReplyKeyboardRemove(),
             )
@@ -1833,8 +2133,7 @@ class ConfettiTelegramBot:
             if len(parts) != 5:
                 await self._reply(
                     update,
-                    "Неверный формат. Используйте 5 частей через вертикальную черту.\n"
-                    "Format incorrect: 5 éléments séparés par |."
+                    "Неверный формат. Используйте 5 частей через вертикальную черту."
                     + self.ADMIN_CANCEL_PROMPT,
                     reply_markup=ReplyKeyboardRemove(),
                 )
@@ -1853,9 +2152,10 @@ class ConfettiTelegramBot:
         content.vocabulary = entries
         await self._reply(
             update,
-            f"Обновлено слов: {len(entries)}.\nNombre d'entrées: {len(entries)}.",
+            f"Обновлено слов: {len(entries)}.",
             reply_markup=self._admin_menu_markup(),
         )
+        self._save_persistent_state()
         return True
 
 
