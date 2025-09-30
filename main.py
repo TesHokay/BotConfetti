@@ -656,8 +656,9 @@ def main() -> None:  # pragma: no cover - thin wrapper
     token = _resolve_bot_token()
     if token is None:
         LOGGER.error(
-            "Bot token is not configured. Set CONFETTI_BOT_TOKEN or TELEGRAM_BOT_TOKEN"
-            " environment variable before running the bot."
+            "Bot token is not configured. Set one of %s or provide a file path via %s",
+            ", ".join(TOKEN_ENVIRONMENT_KEYS),
+            ", ".join(TOKEN_FILE_ENVIRONMENT_KEYS),
         )
         raise SystemExit(1)
 
@@ -670,17 +671,34 @@ def main() -> None:  # pragma: no cover - thin wrapper
     application.run_polling()
 
 
+TOKEN_ENVIRONMENT_KEYS: tuple[str, ...] = (
+    "CONFETTI_BOT_TOKEN",
+    "TELEGRAM_BOT_TOKEN",
+    "BOT_TOKEN",
+    "TELEGRAM_TOKEN",
+    "CONFETTI_TOKEN",
+)
+
+TOKEN_FILE_ENVIRONMENT_KEYS: tuple[str, ...] = (
+    "CONFETTI_BOT_TOKEN_FILE",
+    "TELEGRAM_BOT_TOKEN_FILE",
+    "BOT_TOKEN_FILE",
+    "TELEGRAM_TOKEN_FILE",
+    "CONFETTI_BOT_TOKEN_PATH",
+)
+
+
 def _resolve_bot_token() -> Optional[str]:
     """Read the bot token from the environment and validate it."""
 
-    for key in ("CONFETTI_BOT_TOKEN", "TELEGRAM_BOT_TOKEN"):
+    for key in TOKEN_ENVIRONMENT_KEYS:
         token = os.environ.get(key)
         if token:
             token = token.strip()
             if token and token != "TOKEN_PLACEHOLDER":
                 return token
 
-    for key in ("CONFETTI_BOT_TOKEN_FILE", "TELEGRAM_BOT_TOKEN_FILE"):
+    for key in TOKEN_FILE_ENVIRONMENT_KEYS:
         token_path = os.environ.get(key)
         if token_path:
             token = _read_token_file(Path(token_path))
@@ -708,17 +726,41 @@ def _apply_env_file(path: Path) -> None:
         return
 
     for line in content.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        parsed = _parse_env_assignment(line)
+        if not parsed:
             continue
-        if "=" not in stripped:
-            LOGGER.debug("Ignoring malformed environment line in %s: %s", path, line)
+        key, value = parsed
+        if key in os.environ:
             continue
-        key, value = stripped.split("=", 1)
-        key = key.strip()
-        if not key or key in os.environ:
-            continue
-        os.environ[key] = value.strip().strip('"').strip("'")
+        os.environ[key] = value
+
+
+def _parse_env_assignment(line: str) -> Optional[tuple[str, str]]:
+    """Parse a dotenv-style assignment returning ``(key, value)`` when valid."""
+
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+
+    if stripped.startswith("export "):
+        stripped = stripped[len("export ") :].lstrip()
+
+    if "=" not in stripped:
+        LOGGER.debug("Ignoring malformed environment line: %s", line)
+        return None
+
+    key, value = stripped.split("=", 1)
+    key = key.strip()
+    value = value.strip()
+
+    if not key:
+        LOGGER.debug("Ignoring environment line with empty key: %s", line)
+        return None
+
+    if value and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1]
+
+    return key, value
 
 
 def _read_token_file(path: Path) -> Optional[str]:
