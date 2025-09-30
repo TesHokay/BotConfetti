@@ -96,33 +96,59 @@ def _require_telegram() -> None:
 
 
 @dataclass
+class MediaAttachment:
+    """Representation of a media payload that can be resent later."""
+
+    kind: str
+    file_id: str
+    caption: Optional[str] = None
+
+
+@dataclass
+class ContentBlock:
+    """Rich content containing text and optional media attachments."""
+
+    text: str = ""
+    media: list[MediaAttachment] = field(default_factory=list)
+
+    def copy(self) -> "ContentBlock":
+        return ContentBlock(
+            text=self.text,
+            media=[MediaAttachment(kind=item.kind, file_id=item.file_id, caption=item.caption) for item in self.media],
+        )
+
+
+@dataclass
 class BotContent:
     """Mutable content blocks that administrators can edit at runtime."""
 
-    schedule: str
-    about: str
-    teachers: str
-    payment: str
-    album: str
-    contacts: str
+    schedule: ContentBlock
+    about: ContentBlock
+    teachers: ContentBlock
+    payment: ContentBlock
+    album: ContentBlock
+    contacts: ContentBlock
     vocabulary: list[dict[str, str]]
 
     @classmethod
     def default(cls) -> "BotContent":
         return cls(
-            schedule=(
-                "🇫🇷 Voici nos horaires actuels :\n"
-                "🇷🇺 Наше актуальное расписание:\n\n"
-                "☀️ Matin / Утро : 10:00 – 12:00\n"
-                "🌤 Après-midi / День : 14:00 – 16:00\n"
-                "🌙 Soir / Вечер : 18:00 – 20:00"
+            schedule=ContentBlock(
+                text=(
+                    "🇫🇷 Voici nos horaires actuels :\n"
+                    "🇷🇺 Наше актуальное расписание:\n\n"
+                    "☀️ Matin / Утро : 10:00 – 12:00\n"
+                    "🌤 Après-midi / День : 14:00 – 16:00\n"
+                    "🌙 Soir / Вечер : 18:00 – 20:00"
+                )
             ),
-            about=(
-                "🇫🇷 À propos de nous\n"
-                "Notre compagnie existe déjà depuis 8 ans, et pendant ce temps elle est devenue un lieu où les enfants découvrent toute la beauté de la langue et de la culture françaises.\n"
-                "Notre équipe est composée uniquement de professionnels :\n"
-                "• des enseignants avec une formation supérieure spécialisée et des diplômes avec mention,\n"
-                "• des titulaires du certificat international DALF,\n"
+            about=ContentBlock(
+                text=(
+                    "🇫🇷 À propos de nous\n"
+                    "Notre compagnie existe déjà depuis 8 ans, et pendant ce temps elle est devenue un lieu où les enfants découvrent toute la beauté de la langue et de la culture françaises.\n"
+                    "Notre équipe est composée uniquement de professionnels :\n"
+                    "• des enseignants avec une formation supérieure spécialisée et des diplômes avec mention,\n"
+                    "• des titulaires du certificat international DALF,\n"
                 "• des professeurs avec plus de 10 ans d’expérience,\n"
                 "• ainsi que des locuteurs natifs qui partagent l’authenticité de la culture française.\n"
                 "Chaque année, nous participons à des festivals francophones dans toute la Russie — de Moscou et Saint-Pétersbourg à Ekaterinbourg et Valdaï. Nous nous produisons régulièrement sur les scènes de notre ville (par exemple à l’école n° 22), nous organisons des fêtes populaires en France, et nous clôturons chaque saison par un événement festif attendu par tous nos élèves.\n"
@@ -137,13 +163,15 @@ class BotContent:
                 "Каждый год мы участвуем во франкофонных фестивалях по всей России — от Москвы и Санкт-Петербурга до Екатеринбурга и Валдая. Мы регулярно выступаем на площадках города (например, в школе № 22), организуем праздники, любимые во Франции, и делаем яркое закрытие сезона, которое ждут все наши ученики.\n"
                 "Наша главная цель проста и очень важна: 👉 чтобы дети полюбили французский язык ❤️\n\n"
                 "🎭 Chez nous, Confetti = fête !\n🎭 У нас Конфетти = это всегда праздник!"
+                )
             ),
-            teachers=(
-                "🇫🇷 Nos enseignants sont passionnés et expérimentés.\n"
-                "🇷🇺 Наши преподаватели — увлечённые и опытные педагоги.\n\n"
-                "👩‍🏫 Ksenia Nastytsch\n"
-                "Enseignante de français avec plus de 20 ans d’expérience.\n"
-                "Diplômée de l’Université d’État de Perm en philologie (français, anglais, allemand et espagnol).\n"
+            teachers=ContentBlock(
+                text=(
+                    "🇫🇷 Nos enseignants sont passionnés et expérimentés.\n"
+                    "🇷🇺 Наши преподаватели — увлечённые и опытные педагоги.\n\n"
+                    "👩‍🏫 Ksenia Nastytsch\n"
+                    "Enseignante de français avec plus de 20 ans d’expérience.\n"
+                    "Diplômée de l’Université d’État de Perm en philologie (français, anglais, allemand et espagnol).\n"
                 "Titulaire du certificat international DALF, a effectué des stages en France (Grenoble, Pau, Metz).\n\n"
                 "Ксения Настыч\n"
                 "Преподаватель французского языка с опытом работы более 20 лет.\n"
@@ -156,23 +184,30 @@ class BotContent:
                 "Examinateur DALF, prépare aux examens du baccalauréat russe (ЕГЭ) et aux olympiades.\n\n"
                 "🇷🇺 Красноборова Людмила Анатольевна\nПреподаватель французского языка, кандидат филологических наук, доцент ПГНИУ.\n"
                 "Экзаменатор DALF, готовит к ЕГЭ и олимпиадам."
+                )
             ),
-            payment=(
-                "🇫🇷 Veuillez envoyer une photo ou un reçu de paiement ici.\n"
-                "🇷🇺 Пожалуйста, отправьте сюда фото или чек об оплате.\n\n"
-                "📌 Après vérification, nous confirmerons votre inscription.\n"
-                "📌 После проверки мы подтвердим вашу запись."
+            payment=ContentBlock(
+                text=(
+                    "🇫🇷 Veuillez envoyer une photo ou un reçu de paiement ici.\n"
+                    "🇷🇺 Пожалуйста, отправьте сюда фото или чек об оплате.\n\n"
+                    "📌 Après vérification, nous confirmerons votre inscription.\n"
+                    "📌 После проверки мы подтвердим вашу запись."
+                )
             ),
-            album=(
-                "🇫🇷 Regardez nos meilleurs moments 🎭\n"
-                "🇷🇺 Посмотрите наши лучшие моменты 🎭\n\n"
-                "👉 https://confetti.ru/album"
+            album=ContentBlock(
+                text=(
+                    "🇫🇷 Regardez nos meilleurs moments 🎭\n"
+                    "🇷🇺 Посмотрите наши лучшие моменты 🎭\n\n"
+                    "👉 https://confetti.ru/album"
+                )
             ),
-            contacts=(
-                "📞 Téléphone : +7 (900) 000-00-00\n"
-                "📧 Email : confetti@example.com\n"
-                "🌐 Site / Сайт : https://confetti.ru\n"
-                "📲 Telegram : @ConfettiAdmin"
+            contacts=ContentBlock(
+                text=(
+                    "📞 Téléphone : +7 (900) 000-00-00\n"
+                    "📧 Email : confetti@example.com\n"
+                    "🌐 Site / Сайт : https://confetti.ru\n"
+                    "📲 Telegram : @ConfettiAdmin"
+                )
             ),
             vocabulary=[
                 {
@@ -208,12 +243,12 @@ class BotContent:
 
     def copy(self) -> "BotContent":
         return BotContent(
-            schedule=self.schedule,
-            about=self.about,
-            teachers=self.teachers,
-            payment=self.payment,
-            album=self.album,
-            contacts=self.contacts,
+            schedule=self.schedule.copy(),
+            about=self.about.copy(),
+            teachers=self.teachers.copy(),
+            payment=self.payment.copy(),
+            album=self.album.copy(),
+            contacts=self.contacts.copy(),
             vocabulary=[entry.copy() for entry in self.vocabulary],
         )
 
@@ -232,16 +267,24 @@ class ConfettiTelegramBot:
     REGISTRATION_CONTACT_PERSON = 4
     REGISTRATION_PHONE = 5
     REGISTRATION_TIME = 6
+    REGISTRATION_PAYMENT = 7
+
+    CANCELLATION_PROGRAM = 21
+    CANCELLATION_REASON = 22
 
     MAIN_MENU_BUTTON = "⬅️ Главное меню"
     REGISTRATION_BUTTON = "📝 Запись / Inscription"
+    CANCELLATION_BUTTON = "❗️ Отменить занятие / Annuler"
+    REGISTRATION_SKIP_PAYMENT_BUTTON = "⏭ Пока без оплаты"
     ADMIN_MENU_BUTTON = "🛠 Админ-панель"
     ADMIN_BACK_TO_USER_BUTTON = "⬅️ Пользовательское меню"
     ADMIN_BROADCAST_BUTTON = "📣 Рассылка"
     ADMIN_VIEW_APPLICATIONS_BUTTON = "📬 Заявки"
+    ADMIN_ADD_ADMIN_BUTTON = "➕ Добавить администратора"
     ADMIN_EDIT_SCHEDULE_BUTTON = "🗓 Редактировать расписание"
     ADMIN_EDIT_ABOUT_BUTTON = "ℹ️ Редактировать информацию"
     ADMIN_EDIT_TEACHERS_BUTTON = "👩‍🏫 Редактировать преподавателей"
+    ADMIN_EDIT_PAYMENT_BUTTON = "💳 Редактировать оплату"
     ADMIN_EDIT_ALBUM_BUTTON = "📸 Редактировать фотоальбом"
     ADMIN_EDIT_CONTACTS_BUTTON = "📞 Редактировать контакты"
     ADMIN_EDIT_VOCABULARY_BUTTON = "📚 Редактировать словарь"
@@ -250,8 +293,8 @@ class ConfettiTelegramBot:
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание / Horaires"),
         ("ℹ️ О студии / À propos de nous", "👩‍🏫 Преподаватели / Enseignants"),
-        ("💳 Сообщить об оплате / Paiement", "📸 Фотоальбом / Album photo"),
-        ("📞 Контакты / Contact", "📚 Полезные слова / Vocabulaire"),
+        ("📸 Фотоальбом / Album photo", "📞 Контакты / Contact"),
+        ("📚 Полезные слова / Vocabulaire", CANCELLATION_BUTTON),
     )
 
     TIME_OF_DAY_OPTIONS = (
@@ -328,6 +371,15 @@ class ConfettiTelegramBot:
         },
     )
 
+    CONTENT_LABELS = {
+        "schedule": "Расписание",
+        "about": "О студии",
+        "teachers": "Преподаватели",
+        "payment": "Оплата",
+        "album": "Фотоальбом",
+        "contacts": "Контакты",
+    }
+
     def build_application(self) -> Application:
         """Construct the PTB application."""
 
@@ -344,24 +396,27 @@ class ConfettiTelegramBot:
         return application
 
     def __post_init__(self) -> None:
-        self.admin_chat_ids = _normalise_admin_chat_ids(self.admin_chat_ids)
+        normalised = _normalise_admin_chat_ids(self.admin_chat_ids)
+        self.admin_chat_ids = normalised
+        self._runtime_admin_ids: set[int] = set(normalised)
 
-    def build_profile(self, chat: Any) -> "UserProfile":
-        """Return the appropriate profile for ``chat``."""
+    def build_profile(self, chat: Any, user: Any | None = None) -> "UserProfile":
+        """Return the appropriate profile for ``chat`` and optional ``user``."""
 
         chat_id = _coerce_chat_id_from_object(chat)
-        if self.is_admin_chat(chat_id):
+        if self._is_admin_identity(chat=chat, user=user):
             return AdminProfile(chat_id=chat_id)
         return UserProfile(chat_id=chat_id)
 
     def is_admin_chat(self, chat: Any) -> bool:
         """Return ``True`` when ``chat`` belongs to an administrator."""
 
-        try:
-            chat_id = _coerce_chat_id_from_object(chat)
-        except ValueError:
-            return False
-        return chat_id in self.admin_chat_ids
+        return self._is_admin_identity(chat=chat)
+
+    def is_admin_user(self, user: Any) -> bool:
+        """Return ``True`` when ``user`` is recognised as an administrator."""
+
+        return self._is_admin_identity(user=user)
 
     def _build_rate_limiter(self) -> Optional[AIORateLimiter]:  # type: ignore[name-defined]
         """Return an ``AIORateLimiter`` instance when possible."""
@@ -429,6 +484,9 @@ class ConfettiTelegramBot:
                         self._registration_cancel,
                     ),
                 ],
+                self.REGISTRATION_PAYMENT: [
+                    MessageHandler(~filters.COMMAND, self._registration_collect_payment),
+                ],
             },
             fallbacks=[
                 CommandHandler("cancel", self._registration_cancel),
@@ -440,11 +498,44 @@ class ConfettiTelegramBot:
             allow_reentry=True,
         )
 
+        cancellation = ConversationHandler(
+            entry_points=[
+                MessageHandler(
+                    filters.Regex(self._exact_match_regex(self.CANCELLATION_BUTTON)),
+                    self._start_cancellation,
+                )
+            ],
+            states={
+                self.CANCELLATION_PROGRAM: [
+                    MessageHandler(
+                        filters.Regex(self._programs_regex()),
+                        self._cancellation_collect_program,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._cancellation_cancel,
+                    ),
+                ],
+                self.CANCELLATION_REASON: [
+                    MessageHandler(~filters.COMMAND, self._cancellation_collect_reason),
+                ],
+            },
+            fallbacks=[
+                CommandHandler("cancel", self._cancellation_cancel),
+                MessageHandler(
+                    filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                    self._cancellation_cancel,
+                ),
+            ],
+            allow_reentry=True,
+        )
+
         application.add_handler(CommandHandler("start", self._start))
         application.add_handler(CommandHandler("menu", self._show_main_menu))
         application.add_handler(CommandHandler("admin", self._show_admin_menu))
         application.add_handler(conversation)
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text))
+        application.add_handler(cancellation)
+        application.add_handler(MessageHandler(~filters.COMMAND, self._handle_message))
 
     def _exact_match_regex(self, text: str) -> str:
         return rf"^{re.escape(text)}$"
@@ -466,16 +557,20 @@ class ConfettiTelegramBot:
             keyboard.append([self.ADMIN_MENU_BUTTON])
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-    def _main_menu_markup_for(self, update: Update) -> ReplyKeyboardMarkup:
-        return self._main_menu_markup(include_admin=self._is_admin_update(update))
+    def _main_menu_markup_for(
+        self, update: Update, context: Optional[ContextTypes.DEFAULT_TYPE] = None
+    ) -> ReplyKeyboardMarkup:
+        return self._main_menu_markup(include_admin=self._is_admin_update(update, context))
 
     def _admin_menu_markup(self) -> ReplyKeyboardMarkup:
         keyboard = [
             [self.ADMIN_BACK_TO_USER_BUTTON, self.ADMIN_CANCEL_BUTTON],
             [self.ADMIN_BROADCAST_BUTTON, self.ADMIN_VIEW_APPLICATIONS_BUTTON],
+            [self.ADMIN_ADD_ADMIN_BUTTON],
             [self.ADMIN_EDIT_SCHEDULE_BUTTON],
             [self.ADMIN_EDIT_ABOUT_BUTTON],
             [self.ADMIN_EDIT_TEACHERS_BUTTON],
+            [self.ADMIN_EDIT_PAYMENT_BUTTON],
             [self.ADMIN_EDIT_ALBUM_BUTTON],
             [self.ADMIN_EDIT_CONTACTS_BUTTON],
             [self.ADMIN_EDIT_VOCABULARY_BUTTON],
@@ -485,9 +580,26 @@ class ConfettiTelegramBot:
     def _admin_cancel_markup(self) -> ReplyKeyboardMarkup:
         return ReplyKeyboardMarkup([[self.ADMIN_CANCEL_BUTTON]], resize_keyboard=True)
 
-    def _is_admin_update(self, update: Update) -> bool:
-        chat = update.effective_chat
-        return bool(chat and self.is_admin_chat(chat))
+    def _is_admin_identity(self, *, chat: Any | None = None, user: Any | None = None) -> bool:
+        """Check whether either ``chat`` or ``user`` matches an admin id."""
+
+        for candidate in (chat, user):
+            if candidate is None:
+                continue
+            try:
+                candidate_id = _coerce_chat_id_from_object(candidate)
+            except ValueError:
+                continue
+            if candidate_id in self._runtime_admin_ids:
+                return True
+        return False
+
+    def _is_admin_update(
+        self, update: Update, context: Optional[ContextTypes.DEFAULT_TYPE] = None
+    ) -> bool:
+        if context is not None:
+            self._refresh_admin_cache(context)
+        return self._is_admin_identity(chat=update.effective_chat, user=update.effective_user)
 
     def _application_data(self, context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
         """Return application-level storage across PTB versions."""
@@ -511,7 +623,36 @@ class ConfettiTelegramBot:
         setattr(context, "_fallback_application_data", storage)
         return storage
 
+    def _refresh_admin_cache(self, context: ContextTypes.DEFAULT_TYPE) -> set[int]:
+        """Load dynamic administrators from storage into the runtime cache."""
+
+        storage = self._application_data(context)
+        candidates = storage.get("dynamic_admins")
+        ids: set[int] = set()
+        if isinstance(candidates, (set, list, tuple)):
+            for candidate in candidates:
+                try:
+                    ids.add(_coerce_chat_id(candidate))
+                except ValueError:
+                    continue
+        storage["dynamic_admins"] = ids
+        self._runtime_admin_ids.update(ids)
+        return ids
+
+    def _store_dynamic_admin(
+        self, context: ContextTypes.DEFAULT_TYPE, admin_id: int
+    ) -> set[int]:
+        storage = self._application_data(context)
+        existing = storage.get("dynamic_admins")
+        if not isinstance(existing, set):
+            existing = self._refresh_admin_cache(context)
+        existing.add(admin_id)
+        storage["dynamic_admins"] = existing
+        self._runtime_admin_ids.add(admin_id)
+        return existing
+
     def _remember_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        self._refresh_admin_cache(context)
         chat = update.effective_chat
         if not chat:
             return
@@ -538,6 +679,10 @@ class ConfettiTelegramBot:
     def _get_content(self, context: ContextTypes.DEFAULT_TYPE) -> BotContent:
         content = self._application_data(context).get("content")
         if isinstance(content, BotContent):
+            for field_name in self.CONTENT_LABELS:
+                block = getattr(content, field_name, None)
+                if isinstance(block, str):
+                    setattr(content, field_name, ContentBlock(text=block))
             return content
         if isinstance(content, dict):
             # Backward compatibility if someone serialised a dict previously.
@@ -549,7 +694,11 @@ class ConfettiTelegramBot:
         return fresh
 
     def _store_registration(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: dict[str, Any]
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        data: dict[str, Any],
+        attachments: Optional[list[MediaAttachment]] = None,
     ) -> None:
         chat = update.effective_chat
         user = update.effective_user
@@ -565,6 +714,10 @@ class ConfettiTelegramBot:
             "submitted_by": getattr(user, "full_name", None) if user else None,
             "submitted_by_id": getattr(user, "id", None) if user else None,
             "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "payment_note": data.get("payment_note", ""),
+            "payment_media": self._attachments_to_dicts(attachments or [])
+            if attachments
+            else data.get("payment_media", []),
         }
         registrations = self._application_data(context).setdefault("registrations", [])
         if isinstance(registrations, list):
@@ -572,11 +725,50 @@ class ConfettiTelegramBot:
         else:
             self._application_data(context)["registrations"] = [record]
 
+    async def _store_cancellation(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        data: dict[str, Any],
+        attachments: Optional[list[MediaAttachment]] = None,
+    ) -> None:
+        chat = update.effective_chat
+        user = update.effective_user
+        record = {
+            "program": data.get("program", ""),
+            "details": data.get("details", ""),
+            "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
+            "submitted_by": getattr(user, "full_name", None) if user else None,
+            "submitted_by_id": getattr(user, "id", None) if user else None,
+            "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "attachments": self._attachments_to_dicts(attachments or [])
+            if attachments
+            else data.get("evidence", []),
+        }
+        storage = self._application_data(context).setdefault("cancellations", [])
+        if isinstance(storage, list):
+            storage.append(record)
+        else:
+            self._application_data(context)["cancellations"] = [record]
+
+        admin_message = (
+            "🚫 Отмена занятия\n"
+            f"📚 Программа: {record.get('program', '—')}\n"
+            f"📝 Комментарий: {record.get('details', '—')}\n"
+            f"👤 Отправил: {record.get('submitted_by', '—')}"
+        )
+        await self._notify_admins(
+            context,
+            admin_message,
+            media=self._dicts_to_attachments(record.get("attachments")),
+        )
+        context.user_data.pop("cancellation", None)
+
     async def _start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Send the greeting and display the main menu."""
 
         self._remember_chat(update, context)
-        await self._send_greeting(update)
+        await self._send_greeting(update, context)
 
     async def _show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Show the menu without repeating the full greeting."""
@@ -586,20 +778,20 @@ class ConfettiTelegramBot:
             "👉 Veuillez choisir une rubrique dans le menu ci-dessous.\n"
             "👉 Пожалуйста, выберите раздел в меню ниже."
         )
-        if self._is_admin_update(update):
+        if self._is_admin_update(update, context):
             message += (
                 "\n\n🛠 Для управления ботом откройте «Админ-панель» в меню."
                 "\n🛠 Pour administrer le bot, choisissez «Админ-панель»."
             )
-        await self._reply(update, message, reply_markup=self._main_menu_markup_for(update))
+        await self._reply(update, message, reply_markup=self._main_menu_markup_for(update, context))
 
     async def _show_admin_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not self._is_admin_update(update):
+        if not self._is_admin_update(update, context):
             await self._reply(
                 update,
                 "Эта панель доступна только администраторам.\n"
                 "Ce panneau est réservé aux administrateurs.",
-                reply_markup=self._main_menu_markup_for(update),
+                reply_markup=self._main_menu_markup_for(update, context),
             )
             return
         self._remember_chat(update, context)
@@ -609,7 +801,7 @@ class ConfettiTelegramBot:
         )
         await self._reply(update, message, reply_markup=self._admin_menu_markup())
 
-    async def _send_greeting(self, update: Update) -> None:
+    async def _send_greeting(self, update: Update, context: Optional[ContextTypes.DEFAULT_TYPE] = None) -> None:
         greeting = (
             "🎉 🇫🇷 Bonjour et bienvenue dans la compagnie «Confetti» !\n"
             "🎉 🇷🇺 Здравствуйте и добро пожаловать в студию «Конфетти»!\n\n"
@@ -618,30 +810,187 @@ class ConfettiTelegramBot:
             "👉 Veuillez choisir une rubrique dans le menu ci-dessous.\n"
             "👉 Пожалуйста, выберите раздел в меню ниже."
         )
-        if self._is_admin_update(update):
+        if self._is_admin_update(update, context):
             greeting += (
                 "\n\n🛠 У вас есть доступ к админ-панели — нажмите кнопку ниже, чтобы управлять контентом."
                 "\n🛠 Vous pouvez gérer le contenu via le bouton «Админ-панель»."
             )
-        await self._reply(update, greeting, reply_markup=self._main_menu_markup_for(update))
+        await self._reply(update, greeting, reply_markup=self._main_menu_markup_for(update, context))
 
     async def _reply(
         self,
         update: Update,
-        text: str,
+        text: Optional[str] = None,
         *,
         reply_markup: Optional[ReplyKeyboardMarkup | ReplyKeyboardRemove] = None,
+        media: Optional[list[MediaAttachment]] = None,
     ) -> None:
-        if update.message:
-            await update.message.reply_text(text, reply_markup=reply_markup)
-        elif update.callback_query:
-            await update.callback_query.answer()
-            await update.callback_query.message.reply_text(text, reply_markup=reply_markup)
+        message = update.message
+        callback = update.callback_query
+        target = message or (callback.message if callback else None)
+
+        if callback:
+            await callback.answer()
+
+        markup_used = False
+
+        if text:
+            if target is not None:
+                await target.reply_text(text, reply_markup=reply_markup)
+                markup_used = True
+        if media and target is not None:
+            for index, attachment in enumerate(media):
+                extra: dict[str, Any] = {}
+                if not markup_used and reply_markup is not None and index == 0:
+                    extra["reply_markup"] = reply_markup
+                    markup_used = True
+                if attachment.caption:
+                    extra["caption"] = attachment.caption
+                try:
+                    if attachment.kind == "photo":
+                        await target.reply_photo(attachment.file_id, **extra)
+                    elif attachment.kind == "video":
+                        await target.reply_video(attachment.file_id, **extra)
+                    elif attachment.kind == "animation":
+                        await target.reply_animation(attachment.file_id, **extra)
+                    elif attachment.kind == "document":
+                        await target.reply_document(attachment.file_id, **extra)
+                    elif attachment.kind == "video_note":
+                        await target.reply_video_note(attachment.file_id)
+                    else:
+                        LOGGER.debug("Unsupported media type %s", attachment.kind)
+                except Exception as exc:  # pragma: no cover - network dependent
+                    LOGGER.warning("Failed to reply with media %s: %s", attachment.kind, exc)
+        elif reply_markup is not None and not markup_used and target is not None:
+            await target.reply_text("", reply_markup=reply_markup)
+
+    def _extract_message_payload(self, message: Any | None) -> tuple[str, list[MediaAttachment]]:
+        """Return the plain text and media attachments contained in ``message``."""
+
+        if message is None:
+            return "", []
+
+        text = (getattr(message, "text", None) or "").strip()
+        caption = (getattr(message, "caption", None) or "").strip()
+        remaining_caption = caption or None
+        attachments: list[MediaAttachment] = []
+
+        def push(kind: str, file_id: str) -> None:
+            nonlocal remaining_caption
+            attachments.append(
+                MediaAttachment(kind=kind, file_id=file_id, caption=remaining_caption)
+            )
+            remaining_caption = None
+
+        photos = getattr(message, "photo", None)
+        if photos:
+            try:
+                best_photo = max(photos, key=lambda item: getattr(item, "file_size", 0) or 0)
+            except ValueError:
+                best_photo = photos[-1]
+            push("photo", best_photo.file_id)
+
+        video = getattr(message, "video", None)
+        if video:
+            push("video", video.file_id)
+
+        animation = getattr(message, "animation", None)
+        if animation:
+            push("animation", animation.file_id)
+
+        document = getattr(message, "document", None)
+        if document:
+            push("document", document.file_id)
+
+        video_note = getattr(message, "video_note", None)
+        if video_note:
+            attachments.append(MediaAttachment(kind="video_note", file_id=video_note.file_id))
+
+        return text, attachments
+
+    async def _send_payload_to_chat(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        *,
+        text: Optional[str] = None,
+        media: Optional[list[MediaAttachment]] = None,
+        reply_markup: Optional[ReplyKeyboardMarkup | ReplyKeyboardRemove] = None,
+    ) -> None:
+        if text:
+            await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+            reply_markup = None
+        if not media:
+            return
+        for index, attachment in enumerate(media):
+            extra: dict[str, Any] = {}
+            if attachment.caption:
+                extra["caption"] = attachment.caption
+            if reply_markup is not None and index == 0:
+                extra["reply_markup"] = reply_markup
+            try:
+                if attachment.kind == "photo":
+                    await context.bot.send_photo(chat_id=chat_id, photo=attachment.file_id, **extra)
+                elif attachment.kind == "video":
+                    await context.bot.send_video(chat_id=chat_id, video=attachment.file_id, **extra)
+                elif attachment.kind == "animation":
+                    await context.bot.send_animation(chat_id=chat_id, animation=attachment.file_id, **extra)
+                elif attachment.kind == "document":
+                    await context.bot.send_document(chat_id=chat_id, document=attachment.file_id, **extra)
+                elif attachment.kind == "video_note":
+                    await context.bot.send_video_note(chat_id=chat_id, video_note=attachment.file_id)
+                else:
+                    LOGGER.debug("Unsupported media type %s for broadcast", attachment.kind)
+            except Exception as exc:  # pragma: no cover - network dependent
+                LOGGER.warning("Failed to deliver media %s to %s: %s", attachment.kind, chat_id, exc)
+
+    async def _notify_admins(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        text: str,
+        *,
+        media: Optional[list[MediaAttachment]] = None,
+    ) -> None:
+        recipients = set(self._runtime_admin_ids)
+        recipients.update(self._refresh_admin_cache(context))
+        for admin_id in sorted(recipients):
+            try:
+                await self._send_payload_to_chat(context, admin_id, text=text, media=media)
+            except Exception as exc:  # pragma: no cover - network dependent
+                LOGGER.warning("Failed to notify admin %s: %s", admin_id, exc)
+
+    def _attachments_to_dicts(self, attachments: list[MediaAttachment]) -> list[dict[str, str]]:
+        serialised: list[dict[str, str]] = []
+        for attachment in attachments:
+            serialised.append(
+                {
+                    "kind": attachment.kind,
+                    "file_id": attachment.file_id,
+                    "caption": attachment.caption or "",
+                }
+            )
+        return serialised
+
+    def _dicts_to_attachments(self, payload: Any) -> list[MediaAttachment]:
+        attachments: list[MediaAttachment] = []
+        if not isinstance(payload, list):
+            return attachments
+        for entry in payload:
+            if not isinstance(entry, dict):
+                continue
+            kind = entry.get("kind")
+            file_id = entry.get("file_id")
+            if not kind or not file_id:
+                continue
+            caption = entry.get("caption") or None
+            attachments.append(MediaAttachment(kind=kind, file_id=file_id, caption=caption))
+        return attachments
 
     # ------------------------------------------------------------------
     # Registration conversation
 
     async def _start_registration(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        self._remember_chat(update, context)
         context.user_data["registration"] = {}
         message_lines = [
             "🇫🇷 À quel programme souhaitez-vous inscrire votre enfant ou vous inscrire ?",
@@ -712,6 +1061,13 @@ class ConfettiTelegramBot:
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
+    def _payment_keyboard(self) -> ReplyKeyboardMarkup:
+        keyboard = [
+            [KeyboardButton(self.REGISTRATION_SKIP_PAYMENT_BUTTON)],
+            [KeyboardButton(self.MAIN_MENU_BUTTON)],
+        ]
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
     async def _registration_collect_phone_contact(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
@@ -744,7 +1100,47 @@ class ConfettiTelegramBot:
 
     async def _registration_collect_time(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data.setdefault("registration", {})["time"] = update.message.text.strip()
-        await self._send_registration_summary(update, context)
+        return await self._prompt_payment_request(update, context)
+
+    async def _prompt_payment_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        instructions = self._get_content(context).payment
+        message = (
+            "💳 🇫🇷 Envoyez une confirmation du paiement (photo, vidéo ou fichier).\n"
+            "💳 🇷🇺 Отправьте подтверждение оплаты (фото, видео или файл).\n\n"
+            "➡️ Если оплаты ещё нет, нажмите «⏭ Пока без оплаты» и мы свяжемся с вами позже."
+        )
+        if instructions.text:
+            message += "\n\n" + instructions.text
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._payment_keyboard(),
+            media=instructions.media or None,
+        )
+        return self.REGISTRATION_PAYMENT
+
+    async def _registration_collect_payment(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("registration", {})
+        text, attachments = self._extract_message_payload(update.message)
+
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._registration_cancel(update, context)
+
+        if text == self.REGISTRATION_SKIP_PAYMENT_BUTTON:
+            data["payment_note"] = "Платёж будет подтверждён позже"
+            data.pop("payment_media", None)
+            await self._send_registration_summary(update, context, media=None)
+            await self._show_main_menu(update, context)
+            return ConversationHandler.END
+
+        if attachments:
+            data["payment_media"] = self._attachments_to_dicts(attachments)
+        if text:
+            data["payment_note"] = text
+
+        await self._send_registration_summary(update, context, media=attachments or None)
         await self._show_main_menu(update, context)
         return ConversationHandler.END
 
@@ -753,12 +1149,85 @@ class ConfettiTelegramBot:
         await self._reply(
             update,
             "❌ Регистрация отменена.\n❌ L'inscription est annulée.",
-            reply_markup=self._main_menu_markup_for(update),
+            reply_markup=self._main_menu_markup_for(update, context),
         )
         return ConversationHandler.END
 
-    async def _send_registration_summary(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # ------------------------------------------------------------------
+    # Cancellation conversation
+
+    async def _start_cancellation(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        self._remember_chat(update, context)
+        context.user_data["cancellation"] = {}
+        message = (
+            "❗️ 🇫🇷 Indiquez la séance que vous annulez.\n"
+            "❗️ 🇷🇺 Укажите занятие, которое вы пропускаете.\n\n"
+            "⚠️ Оплата не возвращается — средства остаются на балансе студии."
+        )
+        await self._reply(update, message, reply_markup=self._program_keyboard())
+        return self.CANCELLATION_PROGRAM
+
+    async def _cancellation_collect_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        context.user_data.setdefault("cancellation", {})["program"] = update.message.text.strip()
+        await self._reply(
+            update,
+            "📅 Напишите дату и время пропуска, а также короткий комментарий.\n"
+            "📅 Indiquez la date, l'heure et un commentaire, s'il vous plaît.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return self.CANCELLATION_REASON
+
+    async def _cancellation_collect_reason(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("cancellation", {})
+        text, attachments = self._extract_message_payload(update.message)
+
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._cancellation_cancel(update, context)
+
+        if attachments:
+            data["evidence"] = self._attachments_to_dicts(attachments)
+        data["details"] = text or ""
+
+        await self._store_cancellation(update, context, data, attachments or None)
+
+        confirmation = (
+            "✅ Отмена зафиксирована.\n"
+            "ℹ️ Средства за пропущенное занятие не возвращаются, но мы учли ваш комментарий."
+        )
+        await self._reply(
+            update,
+            confirmation,
+            reply_markup=self._main_menu_markup_for(update, context),
+        )
+        await self._show_main_menu(update, context)
+        return ConversationHandler.END
+
+    async def _cancellation_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        context.user_data.pop("cancellation", None)
+        await self._reply(
+            update,
+            "Отмена занятия не отправлена.\nAnnulation ignorée.",
+            reply_markup=self._main_menu_markup_for(update, context),
+        )
+        return ConversationHandler.END
+
+    async def _send_registration_summary(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        media: Optional[list[MediaAttachment]] = None,
+    ) -> None:
         data = context.user_data.get("registration", {})
+        attachments = media or self._dicts_to_attachments(data.get("payment_media"))
+        payment_note = data.get("payment_note")
+        payment_status = "✅ Paiement reçu" if attachments else "⏳ Paiement en attente"
+        payment_status_ru = "✅ Оплата подтверждена" if attachments else "⏳ Оплата ожидается"
+
         summary = (
             "🇫🇷 Votre demande a été enregistrée !\n"
             "🇷🇺 Ваша заявка принята!\n\n"
@@ -766,31 +1235,50 @@ class ConfettiTelegramBot:
             f"👤 Contact : {data.get('contact_person', '—')}\n"
             f"📱 Téléphone : {data.get('phone', '—')}\n"
             f"🕒 Heure : {data.get('time', '—')}\n"
-            f"📚 Programme : {data.get('program', '—')}\n\n"
-            "Nous vous contacterons prochainement.\n"
+            f"📚 Programme : {data.get('program', '—')}\n"
+            f"💳 {payment_status} | {payment_status_ru}\n"
+        )
+        if payment_note:
+            summary += f"📝 Remarque : {payment_note}\n"
+        summary += (
+            "\nNous vous contacterons prochainement.\n"
             "Мы свяжемся с вами в ближайшее время."
         )
-        await self._reply(update, summary, reply_markup=self._main_menu_markup_for(update))
-        self._store_registration(update, context, data)
+
+        await self._reply(update, summary, reply_markup=self._main_menu_markup_for(update, context))
+        self._store_registration(update, context, data, attachments)
+
+        admin_message = (
+            "🆕 Новая заявка / Nouvelle inscription\n"
+            f"📚 Программа: {data.get('program', '—')}\n"
+            f"👦 Участник: {data.get('child_name', '—')} ({data.get('class', '—')})\n"
+            f"👤 Контакт: {data.get('contact_person', '—')} | {data.get('phone', '—')}\n"
+            f"🕒 Время: {data.get('time', '—')}\n"
+            f"💳 Статус оплаты: {'получено' if attachments else 'ожидается'}"
+        )
+        if payment_note:
+            admin_message += f"\n📝 Комментарий: {payment_note}"
+
+        await self._notify_admins(context, admin_message, media=attachments or None)
+        context.user_data.pop("registration", None)
 
     # ------------------------------------------------------------------
     # Menu handlers
 
-    async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not update.message:
+    async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.message
+        if message is None:
             return
 
         self._remember_chat(update, context)
 
-        text = (update.message.text or "").strip()
-        if not text:
-            return
+        text, attachments = self._extract_message_payload(message)
 
         if text == self.MAIN_MENU_BUTTON:
             await self._show_main_menu(update, context)
             return
 
-        profile = self.build_profile(update.effective_chat)
+        profile = self.build_profile(update.effective_chat, update.effective_user)
         pending = context.chat_data.get("pending_admin_action")
 
         if pending and profile.is_admin:
@@ -803,10 +1291,16 @@ class ConfettiTelegramBot:
                 )
                 return
             context.chat_data.pop("pending_admin_action", None)
-            await self._dispatch_admin_action(update, context, pending, text)
+            await self._dispatch_admin_action(
+                update,
+                context,
+                pending,
+                text=text,
+                attachments=attachments,
+            )
             return
 
-        if profile.is_admin:
+        if profile.is_admin and text:
             if text == self.ADMIN_MENU_BUTTON:
                 await self._show_admin_menu(update, context)
                 return
@@ -817,20 +1311,29 @@ class ConfettiTelegramBot:
                 context.chat_data["pending_admin_action"] = {"type": "broadcast"}
                 await self._reply(
                     update,
-                    "Введите текст для рассылки всем пользователям.\n"
-                    "Envoyez le message à diffuser.",
+                    "Отправьте сообщение или медиа для рассылки.\n"
+                    "Envoyez le message ou les médias à diffuser.",
                     reply_markup=self._admin_cancel_markup(),
                 )
                 return
             if text == self.ADMIN_VIEW_APPLICATIONS_BUTTON:
                 await self._admin_show_registrations(update, context)
                 return
+            if text == self.ADMIN_ADD_ADMIN_BUTTON:
+                context.chat_data["pending_admin_action"] = {"type": "add_admin"}
+                await self._reply(
+                    update,
+                    "Введите chat_id нового администратора.\n"
+                    "Entrez le chat_id de l'administrateur.",
+                    reply_markup=self._admin_cancel_markup(),
+                )
+                return
             if text == self.ADMIN_EDIT_SCHEDULE_BUTTON:
                 await self._prompt_admin_content_edit(
                     update,
                     context,
                     field="schedule",
-                    instruction="Отправьте новый текст расписания (можно в несколько строк).",
+                    instruction="Отправьте текст и вложения нового расписания.",
                 )
                 return
             if text == self.ADMIN_EDIT_ABOUT_BUTTON:
@@ -838,7 +1341,7 @@ class ConfettiTelegramBot:
                     update,
                     context,
                     field="about",
-                    instruction="Отправьте обновлённый текст раздела «О студии».",
+                    instruction="Отправьте обновлённый блок «О студии» (текст, фото, видео).",
                 )
                 return
             if text == self.ADMIN_EDIT_TEACHERS_BUTTON:
@@ -846,7 +1349,15 @@ class ConfettiTelegramBot:
                     update,
                     context,
                     field="teachers",
-                    instruction="Вставьте полный текст раздела о преподавателях.",
+                    instruction="Поделитесь новым описанием преподавателей и медиа.",
+                )
+                return
+            if text == self.ADMIN_EDIT_PAYMENT_BUTTON:
+                await self._prompt_admin_content_edit(
+                    update,
+                    context,
+                    field="payment",
+                    instruction="Отправьте инструкции по оплате (можно с изображениями).",
                 )
                 return
             if text == self.ADMIN_EDIT_ALBUM_BUTTON:
@@ -854,7 +1365,7 @@ class ConfettiTelegramBot:
                     update,
                     context,
                     field="album",
-                    instruction="Отправьте ссылку или описание фотоальбома.",
+                    instruction="Отправьте ссылку или материалы для фотоальбома.",
                 )
                 return
             if text == self.ADMIN_EDIT_CONTACTS_BUTTON:
@@ -862,30 +1373,48 @@ class ConfettiTelegramBot:
                     update,
                     context,
                     field="contacts",
-                    instruction="Введите новый блок контактов.",
+                    instruction="Введите обновлённые контакты (при необходимости с медиа).",
                 )
                 return
             if text == self.ADMIN_EDIT_VOCABULARY_BUTTON:
                 await self._prompt_admin_vocabulary_edit(update, context)
                 return
 
-        await self._handle_menu_selection(update, context)
+        if text:
+            await self._handle_menu_selection(update, context)
+            return
+
+        if attachments:
+            await self._reply(
+                update,
+                "📌 Пожалуйста, используйте кнопки меню или отправьте текстовое сообщение.\n"
+                "📌 Merci d'utiliser le menu en bas de l'écran.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
 
     async def _dispatch_admin_action(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         pending: Dict[str, Any],
+        *,
         text: str,
+        attachments: list[MediaAttachment],
     ) -> None:
         action_type = pending.get("type")
         if action_type == "broadcast":
-            await self._admin_send_broadcast(update, context, text)
+            await self._admin_send_broadcast(update, context, text, attachments)
             return
         if action_type == "edit_content":
             field = pending.get("field")
             if isinstance(field, str):
-                await self._admin_apply_content_update(update, context, field, text)
+                await self._admin_apply_content_update(
+                    update,
+                    context,
+                    field,
+                    text=text,
+                    attachments=attachments,
+                )
             else:
                 await self._reply(
                     update,
@@ -893,6 +1422,9 @@ class ConfettiTelegramBot:
                     "Impossible d'identifier la section à modifier.",
                     reply_markup=self._admin_menu_markup(),
                 )
+            return
+        if action_type == "add_admin":
+            await self._admin_add_new_admin(update, context, text)
             return
         if action_type == "edit_vocabulary":
             success = await self._admin_apply_vocabulary_update(update, context, text)
@@ -903,6 +1435,42 @@ class ConfettiTelegramBot:
             update,
             "Неизвестное действие администратора.\nAction administrateur inconnue.",
             reply_markup=self._admin_menu_markup(),
+        )
+
+    async def _admin_add_new_admin(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str
+    ) -> None:
+        try:
+            admin_id = _coerce_chat_id(payload)
+        except ValueError:
+            await self._reply(
+                update,
+                "Пожалуйста, отправьте числовой chat_id администратора.\n"
+                "Veuillez envoyer un identifiant numérique.",
+                reply_markup=self._admin_cancel_markup(),
+            )
+            context.chat_data["pending_admin_action"] = {"type": "add_admin"}
+            return
+
+        if admin_id in self._runtime_admin_ids:
+            await self._reply(
+                update,
+                "Этот chat_id уже обладает правами администратора.\n"
+                "Cet identifiant est déjà administrateur.",
+                reply_markup=self._admin_menu_markup(),
+            )
+            return
+
+        self._store_dynamic_admin(context, admin_id)
+        message = (
+            f"✅ Администратор {admin_id} добавлен.\n"
+            "✅ Nouvel administrateur ajouté."
+        )
+        await self._reply(update, message, reply_markup=self._admin_menu_markup())
+
+        await self._notify_admins(
+            context,
+            f"👑 Обновление прав: {admin_id} теперь администратор.",
         )
 
     async def _prompt_admin_content_edit(
@@ -922,11 +1490,21 @@ class ConfettiTelegramBot:
             )
             return
         context.chat_data["pending_admin_action"] = {"type": "edit_content", "field": field}
-        current_value = getattr(content, field)
+        current_block = getattr(content, field)
+        if isinstance(current_block, ContentBlock):
+            text_preview = current_block.text or "(текста нет)"
+            media_note = (
+                f"📎 Текущих вложений: {len(current_block.media)}"
+                if current_block.media
+                else "📎 Вложения отсутствуют."
+            )
+        else:
+            text_preview = str(current_block)
+            media_note = "📎 Вложения отсутствуют."
         message = (
-            f"{instruction}\n"
-            "\nТекущий текст:"
-            f"\n{current_value}"
+            f"{instruction}\n\n"
+            "Текущий текст:"
+            f"\n{text_preview}\n{media_note}"
         )
         await self._reply(update, message, reply_markup=self._admin_cancel_markup())
 
@@ -958,7 +1536,11 @@ class ConfettiTelegramBot:
         await self._reply(update, message, reply_markup=self._admin_cancel_markup())
 
     async def _admin_send_broadcast(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, message: str
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        message: str,
+        attachments: list[MediaAttachment],
     ) -> None:
         known_chats = self._get_known_chats(context)
         if not known_chats:
@@ -973,7 +1555,12 @@ class ConfettiTelegramBot:
         failures: list[str] = []
         for chat_id in sorted(known_chats):
             try:
-                await context.bot.send_message(chat_id=chat_id, text=message)
+                await self._send_payload_to_chat(
+                    context,
+                    chat_id,
+                    text=message if message else None,
+                    media=attachments or None,
+                )
                 successes += 1
             except Exception as exc:  # pragma: no cover - network dependent
                 LOGGER.warning("Failed to send broadcast to %s: %s", chat_id, exc)
@@ -1007,17 +1594,32 @@ class ConfettiTelegramBot:
             contact = record.get("contact_person") or "—"
             phone = record.get("phone") or "—"
             created = record.get("created_at") or "—"
+            payment_media = record.get("payment_media") or []
+            payment_note = record.get("payment_note") or ""
+            if payment_media:
+                payment_status = f"получено ({len(payment_media)} влож.)"
+            else:
+                payment_status = "ожидается"
             lines.append(
                 f"{index}. {child} ({klass})\n"
                 f"   Программа: {program}\n"
                 f"   Контакт: {contact} | {phone}\n"
-                f"   Время: {record.get('time') or '—'} | Добавлено: {created}"
+                f"   Время: {record.get('time') or '—'} | Добавлено: {created}\n"
+                f"   💳 Статус оплаты: {payment_status}"
             )
+            if payment_note:
+                lines.append(f"   📝 Комментарий: {payment_note}")
         message = "\n\n".join(lines)
         await self._reply(update, message, reply_markup=self._admin_menu_markup())
 
     async def _admin_apply_content_update(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, field: str, value: str
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        field: str,
+        *,
+        text: str,
+        attachments: list[MediaAttachment],
     ) -> None:
         content = self._get_content(context)
         if not hasattr(content, field):
@@ -1027,11 +1629,26 @@ class ConfettiTelegramBot:
                 reply_markup=self._admin_menu_markup(),
             )
             return
-        setattr(content, field, value)
+        block = getattr(content, field)
+        new_block = ContentBlock(
+            text=text.strip(),
+            media=[MediaAttachment(kind=item.kind, file_id=item.file_id, caption=item.caption) for item in attachments],
+        )
+        if isinstance(block, ContentBlock):
+            block.text = new_block.text
+            block.media = new_block.media
+        else:
+            setattr(content, field, new_block)
+        label = self.CONTENT_LABELS.get(field, field)
         await self._reply(
             update,
             "Раздел обновлён!\nLa section a été mise à jour.",
             reply_markup=self._admin_menu_markup(),
+        )
+        await self._notify_admins(
+            context,
+            f"🛠 Раздел «{label}» был обновлён администратором.",
+            media=attachments or None,
         )
 
     async def _admin_apply_vocabulary_update(
@@ -1083,7 +1700,6 @@ class ConfettiTelegramBot:
             "📅 Расписание / Horaires": self._send_schedule,
             "ℹ️ О студии / À propos de nous": self._send_about,
             "👩‍🏫 Преподаватели / Enseignants": self._send_teachers,
-            "💳 Сообщить об оплате / Paiement": self._send_payment_instructions,
             "📸 Фотоальбом / Album photo": self._send_album,
             "📞 Контакты / Contact": self._send_contacts,
             "📚 Полезные слова / Vocabulaire": self._send_vocabulary,
@@ -1095,34 +1711,53 @@ class ConfettiTelegramBot:
                 update,
                 "Пожалуйста, воспользуйтесь меню внизу экрана.\n"
                 "Merci de choisir une option dans le menu ci-dessous.",
-                reply_markup=self._main_menu_markup_for(update),
+                reply_markup=self._main_menu_markup_for(update, context),
             )
             return
         await handler(update, context)
 
+    async def _send_content_block(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, block: ContentBlock
+    ) -> None:
+        text = block.text.strip() if block.text else ""
+        media = block.media or None
+        reply_markup = self._main_menu_markup_for(update, context)
+        if text:
+            await self._reply(update, text, reply_markup=reply_markup, media=media)
+            return
+        if media:
+            await self._reply(
+                update,
+                "📎 Материал доступен во вложениях.\n📎 Contenu disponible en pièce jointe.",
+                reply_markup=reply_markup,
+                media=media,
+            )
+            return
+        await self._reply(
+            update,
+            "Раздел пока пуст.\nCette section est vide pour le moment.",
+            reply_markup=reply_markup,
+        )
+
     async def _send_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
-        await self._reply(update, content.schedule, reply_markup=self._main_menu_markup_for(update))
+        await self._send_content_block(update, context, content.schedule)
 
     async def _send_about(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
-        await self._reply(update, content.about, reply_markup=self._main_menu_markup_for(update))
+        await self._send_content_block(update, context, content.about)
 
     async def _send_teachers(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
-        await self._reply(update, content.teachers, reply_markup=self._main_menu_markup_for(update))
-
-    async def _send_payment_instructions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        content = self._get_content(context)
-        await self._reply(update, content.payment, reply_markup=self._main_menu_markup_for(update))
+        await self._send_content_block(update, context, content.teachers)
 
     async def _send_album(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
-        await self._reply(update, content.album, reply_markup=self._main_menu_markup_for(update))
+        await self._send_content_block(update, context, content.album)
 
     async def _send_contacts(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
-        await self._reply(update, content.contacts, reply_markup=self._main_menu_markup_for(update))
+        await self._send_content_block(update, context, content.contacts)
 
     async def _send_vocabulary(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
@@ -1131,7 +1766,7 @@ class ConfettiTelegramBot:
                 update,
                 "Список слов пока пуст. Добавьте варианты через админ-панель.\n"
                 "La liste de vocabulaire est vide pour le moment.",
-                reply_markup=self._main_menu_markup_for(update),
+                reply_markup=self._main_menu_markup_for(update, context),
             )
             return
         entry = random.choice(content.vocabulary)
@@ -1141,7 +1776,7 @@ class ConfettiTelegramBot:
             f"🇷🇺 {entry.get('translation', '—')}\n\n"
             f"💬 Exemple : {entry.get('example_fr', '—')} — {entry.get('example_ru', '—')}"
         )
-        await self._reply(update, text, reply_markup=self._main_menu_markup_for(update))
+        await self._reply(update, text, reply_markup=self._main_menu_markup_for(update, context))
 
 
 @dataclass(frozen=True)
