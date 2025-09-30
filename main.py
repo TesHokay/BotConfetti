@@ -14,6 +14,7 @@ warning which allows the bot to start without the rate limiter.
 from __future__ import annotations
 
 import logging
+import os
 import random
 import re
 from collections.abc import Iterable
@@ -648,11 +649,34 @@ def main() -> None:  # pragma: no cover - thin wrapper
     """Entry point used by the console script in the original project."""
 
     logging.basicConfig(level=logging.INFO)
-    bot = ConfettiTelegramBot(token="TOKEN_PLACEHOLDER")
+
+    token = _resolve_bot_token()
+    if token is None:
+        LOGGER.error(
+            "Bot token is not configured. Set CONFETTI_BOT_TOKEN or TELEGRAM_BOT_TOKEN"
+            " environment variable before running the bot."
+        )
+        raise SystemExit(1)
+
+    admin_chat_ids = os.environ.get("CONFETTI_ADMIN_CHAT_IDS", "")
+
+    bot = ConfettiTelegramBot(token=token, admin_chat_ids=admin_chat_ids)
     application = bot.build_application()
     # The original project keeps polling outside of the kata scope.  We expose
     # the configured application so that callers can decide how to run it.
     application.run_polling()
+
+
+def _resolve_bot_token() -> Optional[str]:
+    """Read the bot token from the environment and validate it."""
+
+    for key in ("CONFETTI_BOT_TOKEN", "TELEGRAM_BOT_TOKEN"):
+        token = os.environ.get(key)
+        if token:
+            token = token.strip()
+            if token and token != "TOKEN_PLACEHOLDER":
+                return token
+    return None
 
 
 if __name__ == "__main__":  # pragma: no cover - module executable guard
