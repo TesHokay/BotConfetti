@@ -17,6 +17,7 @@ import logging
 import os
 import random
 import re
+from datetime import datetime
 from pathlib import Path
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -47,11 +48,135 @@ AdminChatIdsInput = Union[ChatIdInput, Iterable[ChatIdInput], None]
 
 
 @dataclass
+class BotContent:
+    """Mutable content blocks that administrators can edit at runtime."""
+
+    schedule: str
+    about: str
+    teachers: str
+    payment: str
+    album: str
+    contacts: str
+    vocabulary: list[dict[str, str]]
+
+    @classmethod
+    def default(cls) -> "BotContent":
+        return cls(
+            schedule=(
+                "🇫🇷 Voici nos horaires actuels :\n"
+                "🇷🇺 Наше актуальное расписание:\n\n"
+                "☀️ Matin / Утро : 10:00 – 12:00\n"
+                "🌤 Après-midi / День : 14:00 – 16:00\n"
+                "🌙 Soir / Вечер : 18:00 – 20:00"
+            ),
+            about=(
+                "🇫🇷 À propos de nous\n"
+                "Notre compagnie existe déjà depuis 8 ans, et pendant ce temps elle est devenue un lieu où les enfants découvrent toute la beauté de la langue et de la culture françaises.\n"
+                "Notre équipe est composée uniquement de professionnels :\n"
+                "• des enseignants avec une formation supérieure spécialisée et des diplômes avec mention,\n"
+                "• des titulaires du certificat international DALF,\n"
+                "• des professeurs avec plus de 10 ans d’expérience,\n"
+                "• ainsi que des locuteurs natifs qui partagent l’authenticité de la culture française.\n"
+                "Chaque année, nous participons à des festivals francophones dans toute la Russie — de Moscou et Saint-Pétersbourg à Ekaterinbourg et Valdaï. Nous nous produisons régulièrement sur les scènes de notre ville (par exemple à l’école n° 22), nous organisons des fêtes populaires en France, et nous clôturons chaque saison par un événement festif attendu par tous nos élèves.\n"
+                "Notre objectif principal est simple mais essentiel : 👉 que les enfants tombent amoureux du français ❤️\n\n"
+                "🇷🇺 О нас\n"
+                "Наша студия существует уже 8 лет, и за это время она стала местом, где дети открывают для себя красоту французского языка и культуры.\n"
+                "С нами работают только профессионалы:\n"
+                "• преподаватели с высшим профильным образованием и красными дипломами,\n"
+                "• обладатели международного сертификата DALF,\n"
+                "• педагоги со стажем более 10 лет,\n"
+                "• а также носители языка, которые делятся аутентичным французским опытом.\n"
+                "Каждый год мы участвуем во франкофонных фестивалях по всей России — от Москвы и Санкт-Петербурга до Екатеринбурга и Валдая. Мы регулярно выступаем на площадках города (например, в школе № 22), организуем праздники, любимые во Франции, и делаем яркое закрытие сезона, которое ждут все наши ученики.\n"
+                "Наша главная цель проста и очень важна: 👉 чтобы дети полюбили французский язык ❤️\n\n"
+                "🎭 Chez nous, Confetti = fête !\n🎭 У нас Конфетти = это всегда праздник!"
+            ),
+            teachers=(
+                "🇫🇷 Nos enseignants sont passionnés et expérimentés.\n"
+                "🇷🇺 Наши преподаватели — увлечённые и опытные педагоги.\n\n"
+                "👩‍🏫 Ksenia Nastytsch\n"
+                "Enseignante de français avec plus de 20 ans d’expérience.\n"
+                "Diplômée de l’Université d’État de Perm en philologie (français, anglais, allemand et espagnol).\n"
+                "Titulaire du certificat international DALF, a effectué des stages en France (Grenoble, Pau, Metz).\n\n"
+                "Ксения Настыч\n"
+                "Преподаватель французского языка с опытом работы более 20 лет.\n"
+                "Окончила Пермский государственный университет по специальности «Филология».\n"
+                "Обладатель международного сертификата DALF, проходила стажировки во Франции (Гренобль, По, Мец). Организовывала в течение трёх лет «русские сезоны» в Посольстве России во Франции.\n\n"
+                "👩‍🏫 Анастасия Банникова\n\n"
+                "🇫🇷 Alain Marinot\nLocuteur natif du français avec un accent académique parisien. Acteur et âme de l’école, il parle exclusivement en français — un grand avantage pour les élèves.\n\n"
+                "🇷🇺 Ален Марино\nНоситель французского языка с академическим парижским акцентом. Актёр, душа школы, говорит исключительно по-французски — большая удача для учеников.\n\n"
+                "🇫🇷 Lyudmila Anatolievna Krasnoborova\nEnseignante de français, docteur en philologie, maîtresse de conférences à l’Université d’État de Perm (PGNIU).\n"
+                "Examinateur DALF, prépare aux examens du baccalauréat russe (ЕГЭ) et aux olympiades.\n\n"
+                "🇷🇺 Красноборова Людмила Анатольевна\nПреподаватель французского языка, кандидат филологических наук, доцент ПГНИУ.\n"
+                "Экзаменатор DALF, готовит к ЕГЭ и олимпиадам."
+            ),
+            payment=(
+                "🇫🇷 Veuillez envoyer une photo ou un reçu de paiement ici.\n"
+                "🇷🇺 Пожалуйста, отправьте сюда фото или чек об оплате.\n\n"
+                "📌 Après vérification, nous confirmerons votre inscription.\n"
+                "📌 После проверки мы подтвердим вашу запись."
+            ),
+            album=(
+                "🇫🇷 Regardez nos meilleurs moments 🎭\n"
+                "🇷🇺 Посмотрите наши лучшие моменты 🎭\n\n"
+                "👉 https://confetti.ru/album"
+            ),
+            contacts=(
+                "📞 Téléphone : +7 (900) 000-00-00\n"
+                "📧 Email : confetti@example.com\n"
+                "🌐 Site / Сайт : https://confetti.ru\n"
+                "📲 Telegram : @ConfettiAdmin"
+            ),
+            vocabulary=[
+                {
+                    "word": "Soleil",
+                    "emoji": "☀️",
+                    "translation": "Солнце",
+                    "example_fr": "Le soleil brille.",
+                    "example_ru": "Солнце светит.",
+                },
+                {
+                    "word": "Bonjour",
+                    "emoji": "👋",
+                    "translation": "Здравствуйте",
+                    "example_fr": "Bonjour, comment ça va ?",
+                    "example_ru": "Здравствуйте, как дела?",
+                },
+                {
+                    "word": "Amitié",
+                    "emoji": "🤝",
+                    "translation": "Дружба",
+                    "example_fr": "L'amitié rend la vie plus douce.",
+                    "example_ru": "Дружба делает жизнь добрее.",
+                },
+                {
+                    "word": "Étoile",
+                    "emoji": "✨",
+                    "translation": "Звезда",
+                    "example_fr": "Chaque étoile brille à sa manière.",
+                    "example_ru": "Каждая звезда сияет по-своему.",
+                },
+            ],
+        )
+
+    def copy(self) -> "BotContent":
+        return BotContent(
+            schedule=self.schedule,
+            about=self.about,
+            teachers=self.teachers,
+            payment=self.payment,
+            album=self.album,
+            contacts=self.contacts,
+            vocabulary=[entry.copy() for entry in self.vocabulary],
+        )
+
+
+@dataclass
 class ConfettiTelegramBot:
     """Light-weight wrapper around the PTB application builder."""
 
     token: str
     admin_chat_ids: AdminChatIdsInput = ()
+    content_template: BotContent = field(default_factory=BotContent.default)
 
     REGISTRATION_PROGRAM = 1
     REGISTRATION_CHILD_NAME = 2
@@ -62,6 +187,17 @@ class ConfettiTelegramBot:
 
     MAIN_MENU_BUTTON = "⬅️ Главное меню"
     REGISTRATION_BUTTON = "📝 Запись / Inscription"
+    ADMIN_MENU_BUTTON = "🛠 Админ-панель"
+    ADMIN_BACK_TO_USER_BUTTON = "⬅️ Пользовательское меню"
+    ADMIN_BROADCAST_BUTTON = "📣 Рассылка"
+    ADMIN_VIEW_APPLICATIONS_BUTTON = "📬 Заявки"
+    ADMIN_EDIT_SCHEDULE_BUTTON = "🗓 Редактировать расписание"
+    ADMIN_EDIT_ABOUT_BUTTON = "ℹ️ Редактировать информацию"
+    ADMIN_EDIT_TEACHERS_BUTTON = "👩‍🏫 Редактировать преподавателей"
+    ADMIN_EDIT_ALBUM_BUTTON = "📸 Редактировать фотоальбом"
+    ADMIN_EDIT_CONTACTS_BUTTON = "📞 Редактировать контакты"
+    ADMIN_EDIT_VOCABULARY_BUTTON = "📚 Редактировать словарь"
+    ADMIN_CANCEL_BUTTON = "🚫 Отмена"
 
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание / Horaires"),
@@ -256,16 +392,9 @@ class ConfettiTelegramBot:
 
         application.add_handler(CommandHandler("start", self._start))
         application.add_handler(CommandHandler("menu", self._show_main_menu))
+        application.add_handler(CommandHandler("admin", self._show_admin_menu))
         application.add_handler(conversation)
-        application.add_handler(
-            MessageHandler(
-                filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                self._show_main_menu,
-            )
-        )
-        application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_menu_selection)
-        )
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text))
 
     def _exact_match_regex(self, text: str) -> str:
         return rf"^{re.escape(text)}$"
@@ -281,23 +410,132 @@ class ConfettiTelegramBot:
     # ------------------------------------------------------------------
     # Shared messaging helpers
 
-    def _main_menu_markup(self) -> ReplyKeyboardMarkup:
+    def _main_menu_markup(self, *, include_admin: bool = False) -> ReplyKeyboardMarkup:
         keyboard = [list(row) for row in self.MAIN_MENU_LAYOUT]
+        if include_admin:
+            keyboard.append([self.ADMIN_MENU_BUTTON])
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    def _main_menu_markup_for(self, update: Update) -> ReplyKeyboardMarkup:
+        return self._main_menu_markup(include_admin=self._is_admin_update(update))
+
+    def _admin_menu_markup(self) -> ReplyKeyboardMarkup:
+        keyboard = [
+            [self.ADMIN_BACK_TO_USER_BUTTON, self.ADMIN_CANCEL_BUTTON],
+            [self.ADMIN_BROADCAST_BUTTON, self.ADMIN_VIEW_APPLICATIONS_BUTTON],
+            [self.ADMIN_EDIT_SCHEDULE_BUTTON],
+            [self.ADMIN_EDIT_ABOUT_BUTTON],
+            [self.ADMIN_EDIT_TEACHERS_BUTTON],
+            [self.ADMIN_EDIT_ALBUM_BUTTON],
+            [self.ADMIN_EDIT_CONTACTS_BUTTON],
+            [self.ADMIN_EDIT_VOCABULARY_BUTTON],
+        ]
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    def _admin_cancel_markup(self) -> ReplyKeyboardMarkup:
+        return ReplyKeyboardMarkup([[self.ADMIN_CANCEL_BUTTON]], resize_keyboard=True)
+
+    def _is_admin_update(self, update: Update) -> bool:
+        chat = update.effective_chat
+        return bool(chat and self.is_admin_chat(chat))
+
+    def _remember_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat = update.effective_chat
+        if not chat:
+            return
+        known = self._get_known_chats(context)
+        known.add(_coerce_chat_id_from_object(chat))
+
+    def _get_known_chats(self, context: ContextTypes.DEFAULT_TYPE) -> set[int]:
+        store = context.application_data.setdefault("known_chats", set())
+        if isinstance(store, set):
+            return store
+        if isinstance(store, list):
+            converted: set[int] = set()
+            for chat_id in store:
+                try:
+                    converted.add(_coerce_chat_id(chat_id))
+                except ValueError:
+                    continue
+            context.application_data["known_chats"] = converted
+            return converted
+        converted: set[int] = set()
+        context.application_data["known_chats"] = converted
+        return converted
+
+    def _get_content(self, context: ContextTypes.DEFAULT_TYPE) -> BotContent:
+        content = context.application_data.get("content")
+        if isinstance(content, BotContent):
+            return content
+        if isinstance(content, dict):
+            # Backward compatibility if someone serialised a dict previously.
+            restored = self.content_template.copy()
+            context.application_data["content"] = restored
+            return restored
+        fresh = self.content_template.copy()
+        context.application_data["content"] = fresh
+        return fresh
+
+    def _store_registration(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: dict[str, Any]
+    ) -> None:
+        chat = update.effective_chat
+        user = update.effective_user
+        record = {
+            "program": data.get("program", ""),
+            "child_name": data.get("child_name", ""),
+            "class": data.get("class", ""),
+            "contact_person": data.get("contact_person", ""),
+            "phone": data.get("phone", ""),
+            "time": data.get("time", ""),
+            "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
+            "chat_title": getattr(chat, "title", None) if chat else None,
+            "submitted_by": getattr(user, "full_name", None) if user else None,
+            "submitted_by_id": getattr(user, "id", None) if user else None,
+            "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        }
+        registrations = context.application_data.setdefault("registrations", [])
+        if isinstance(registrations, list):
+            registrations.append(record)
+        else:
+            context.application_data["registrations"] = [record]
 
     async def _start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Send the greeting and display the main menu."""
 
+        self._remember_chat(update, context)
         await self._send_greeting(update)
 
     async def _show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Show the menu without repeating the full greeting."""
 
+        self._remember_chat(update, context)
         message = (
             "👉 Veuillez choisir une rubrique dans le menu ci-dessous.\n"
             "👉 Пожалуйста, выберите раздел в меню ниже."
         )
-        await self._reply(update, message, reply_markup=self._main_menu_markup())
+        if self._is_admin_update(update):
+            message += (
+                "\n\n🛠 Для управления ботом откройте «Админ-панель» в меню."
+                "\n🛠 Pour administrer le bot, choisissez «Админ-панель»."
+            )
+        await self._reply(update, message, reply_markup=self._main_menu_markup_for(update))
+
+    async def _show_admin_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not self._is_admin_update(update):
+            await self._reply(
+                update,
+                "Эта панель доступна только администраторам.\n"
+                "Ce panneau est réservé aux administrateurs.",
+                reply_markup=self._main_menu_markup_for(update),
+            )
+            return
+        self._remember_chat(update, context)
+        message = (
+            "Админ-панель открыта. Выберите действие ниже.\n"
+            "Panneau d'administration ouvert — choisissez une action."
+        )
+        await self._reply(update, message, reply_markup=self._admin_menu_markup())
 
     async def _send_greeting(self, update: Update) -> None:
         greeting = (
@@ -308,7 +546,12 @@ class ConfettiTelegramBot:
             "👉 Veuillez choisir une rubrique dans le menu ci-dessous.\n"
             "👉 Пожалуйста, выберите раздел в меню ниже."
         )
-        await self._reply(update, greeting, reply_markup=self._main_menu_markup())
+        if self._is_admin_update(update):
+            greeting += (
+                "\n\n🛠 У вас есть доступ к админ-панели — нажмите кнопку ниже, чтобы управлять контентом."
+                "\n🛠 Vous pouvez gérer le contenu via le bouton «Админ-панель»."
+            )
+        await self._reply(update, greeting, reply_markup=self._main_menu_markup_for(update))
 
     async def _reply(
         self,
@@ -438,7 +681,7 @@ class ConfettiTelegramBot:
         await self._reply(
             update,
             "❌ Регистрация отменена.\n❌ L'inscription est annulée.",
-            reply_markup=self._main_menu_markup(),
+            reply_markup=self._main_menu_markup_for(update),
         )
         return ConversationHandler.END
 
@@ -455,10 +698,312 @@ class ConfettiTelegramBot:
             "Nous vous contacterons prochainement.\n"
             "Мы свяжемся с вами в ближайшее время."
         )
-        await self._reply(update, summary, reply_markup=self._main_menu_markup())
+        await self._reply(update, summary, reply_markup=self._main_menu_markup_for(update))
+        self._store_registration(update, context, data)
 
     # ------------------------------------------------------------------
     # Menu handlers
+
+    async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message:
+            return
+
+        self._remember_chat(update, context)
+
+        text = (update.message.text or "").strip()
+        if not text:
+            return
+
+        if text == self.MAIN_MENU_BUTTON:
+            await self._show_main_menu(update, context)
+            return
+
+        profile = self.build_profile(update.effective_chat)
+        pending = context.chat_data.get("pending_admin_action")
+
+        if pending and profile.is_admin:
+            if text == self.ADMIN_CANCEL_BUTTON:
+                context.chat_data.pop("pending_admin_action", None)
+                await self._reply(
+                    update,
+                    "Действие отменено.\nL'action est annulée.",
+                    reply_markup=self._admin_menu_markup(),
+                )
+                return
+            context.chat_data.pop("pending_admin_action", None)
+            await self._dispatch_admin_action(update, context, pending, text)
+            return
+
+        if profile.is_admin:
+            if text == self.ADMIN_MENU_BUTTON:
+                await self._show_admin_menu(update, context)
+                return
+            if text == self.ADMIN_BACK_TO_USER_BUTTON:
+                await self._show_main_menu(update, context)
+                return
+            if text == self.ADMIN_BROADCAST_BUTTON:
+                context.chat_data["pending_admin_action"] = {"type": "broadcast"}
+                await self._reply(
+                    update,
+                    "Введите текст для рассылки всем пользователям.\n"
+                    "Envoyez le message à diffuser.",
+                    reply_markup=self._admin_cancel_markup(),
+                )
+                return
+            if text == self.ADMIN_VIEW_APPLICATIONS_BUTTON:
+                await self._admin_show_registrations(update, context)
+                return
+            if text == self.ADMIN_EDIT_SCHEDULE_BUTTON:
+                await self._prompt_admin_content_edit(
+                    update,
+                    context,
+                    field="schedule",
+                    instruction="Отправьте новый текст расписания (можно в несколько строк).",
+                )
+                return
+            if text == self.ADMIN_EDIT_ABOUT_BUTTON:
+                await self._prompt_admin_content_edit(
+                    update,
+                    context,
+                    field="about",
+                    instruction="Отправьте обновлённый текст раздела «О студии».",
+                )
+                return
+            if text == self.ADMIN_EDIT_TEACHERS_BUTTON:
+                await self._prompt_admin_content_edit(
+                    update,
+                    context,
+                    field="teachers",
+                    instruction="Вставьте полный текст раздела о преподавателях.",
+                )
+                return
+            if text == self.ADMIN_EDIT_ALBUM_BUTTON:
+                await self._prompt_admin_content_edit(
+                    update,
+                    context,
+                    field="album",
+                    instruction="Отправьте ссылку или описание фотоальбома.",
+                )
+                return
+            if text == self.ADMIN_EDIT_CONTACTS_BUTTON:
+                await self._prompt_admin_content_edit(
+                    update,
+                    context,
+                    field="contacts",
+                    instruction="Введите новый блок контактов.",
+                )
+                return
+            if text == self.ADMIN_EDIT_VOCABULARY_BUTTON:
+                await self._prompt_admin_vocabulary_edit(update, context)
+                return
+
+        await self._handle_menu_selection(update, context)
+
+    async def _dispatch_admin_action(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        pending: Dict[str, Any],
+        text: str,
+    ) -> None:
+        action_type = pending.get("type")
+        if action_type == "broadcast":
+            await self._admin_send_broadcast(update, context, text)
+            return
+        if action_type == "edit_content":
+            field = pending.get("field")
+            if isinstance(field, str):
+                await self._admin_apply_content_update(update, context, field, text)
+            else:
+                await self._reply(
+                    update,
+                    "Не удалось определить редактируемый блок.\n"
+                    "Impossible d'identifier la section à modifier.",
+                    reply_markup=self._admin_menu_markup(),
+                )
+            return
+        if action_type == "edit_vocabulary":
+            success = await self._admin_apply_vocabulary_update(update, context, text)
+            if not success:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        await self._reply(
+            update,
+            "Неизвестное действие администратора.\nAction administrateur inconnue.",
+            reply_markup=self._admin_menu_markup(),
+        )
+
+    async def _prompt_admin_content_edit(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        field: str,
+        instruction: str,
+    ) -> None:
+        content = self._get_content(context)
+        if not hasattr(content, field):
+            await self._reply(
+                update,
+                "Этот раздел нельзя редактировать.\nCette section ne peut pas être modifiée.",
+                reply_markup=self._admin_menu_markup(),
+            )
+            return
+        context.chat_data["pending_admin_action"] = {"type": "edit_content", "field": field}
+        current_value = getattr(content, field)
+        message = (
+            f"{instruction}\n"
+            "\nТекущий текст:"
+            f"\n{current_value}"
+        )
+        await self._reply(update, message, reply_markup=self._admin_cancel_markup())
+
+    async def _prompt_admin_vocabulary_edit(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        content = self._get_content(context)
+        context.chat_data["pending_admin_action"] = {"type": "edit_vocabulary"}
+        serialized_entries = []
+        for entry in content.vocabulary:
+            serialized_entries.append(
+                "|".join(
+                    [
+                        entry.get("word", ""),
+                        entry.get("emoji", ""),
+                        entry.get("translation", ""),
+                        entry.get("example_fr", ""),
+                        entry.get("example_ru", ""),
+                    ]
+                )
+            )
+        sample = "\n".join(serialized_entries) if serialized_entries else "(пока нет записей)"
+        message = (
+            "Отправьте новые слова в формате: слово|эмодзи|перевод|пример FR|пример RU."
+            "\nКаждое слово — на отдельной строке."
+            "\nEnvoyez les entrées sous forme: mot|emoji|traduction|phrase FR|phrase RU."
+            f"\n\nТекущий список:\n{sample}"
+        )
+        await self._reply(update, message, reply_markup=self._admin_cancel_markup())
+
+    async def _admin_send_broadcast(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, message: str
+    ) -> None:
+        known_chats = self._get_known_chats(context)
+        if not known_chats:
+            await self._reply(
+                update,
+                "Пока нет чатов для рассылки.\nAucun chat connu pour la diffusion.",
+                reply_markup=self._admin_menu_markup(),
+            )
+            return
+
+        successes = 0
+        failures: list[str] = []
+        for chat_id in sorted(known_chats):
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=message)
+                successes += 1
+            except Exception as exc:  # pragma: no cover - network dependent
+                LOGGER.warning("Failed to send broadcast to %s: %s", chat_id, exc)
+                failures.append(str(chat_id))
+
+        result = (
+            f"Рассылка завершена: {successes} из {len(known_chats)} чатов.\n"
+            f"Diffusion envoyée: {successes} / {len(known_chats)}."
+        )
+        if failures:
+            result += "\nНе удалось доставить сообщения в чаты: " + ", ".join(failures)
+        await self._reply(update, result, reply_markup=self._admin_menu_markup())
+
+    async def _admin_show_registrations(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        registrations = context.application_data.get("registrations", [])
+        if not isinstance(registrations, list) or not registrations:
+            await self._reply(
+                update,
+                "Заявок пока нет.\nAucune demande enregistrée pour l'instant.",
+                reply_markup=self._admin_menu_markup(),
+            )
+            return
+
+        lines = ["Последние заявки (до 10):"]
+        for index, record in enumerate(reversed(registrations[-10:]), start=1):
+            child = record.get("child_name") or "—"
+            klass = record.get("class") or "—"
+            program = record.get("program") or "—"
+            contact = record.get("contact_person") or "—"
+            phone = record.get("phone") or "—"
+            created = record.get("created_at") or "—"
+            lines.append(
+                f"{index}. {child} ({klass})\n"
+                f"   Программа: {program}\n"
+                f"   Контакт: {contact} | {phone}\n"
+                f"   Время: {record.get('time') or '—'} | Добавлено: {created}"
+            )
+        message = "\n\n".join(lines)
+        await self._reply(update, message, reply_markup=self._admin_menu_markup())
+
+    async def _admin_apply_content_update(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, field: str, value: str
+    ) -> None:
+        content = self._get_content(context)
+        if not hasattr(content, field):
+            await self._reply(
+                update,
+                "Этот раздел нельзя редактировать.\nCette section ne peut pas être modifiée.",
+                reply_markup=self._admin_menu_markup(),
+            )
+            return
+        setattr(content, field, value)
+        await self._reply(
+            update,
+            "Раздел обновлён!\nLa section a été mise à jour.",
+            reply_markup=self._admin_menu_markup(),
+        )
+
+    async def _admin_apply_vocabulary_update(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str
+    ) -> bool:
+        lines = [line.strip() for line in payload.splitlines() if line.strip()]
+        if not lines:
+            await self._reply(
+                update,
+                "Отправьте хотя бы одну строку с данными.\nVeuillez fournir au moins une entrée.",
+                reply_markup=self._admin_cancel_markup(),
+            )
+            return False
+
+        entries: list[dict[str, str]] = []
+        for line in lines:
+            parts = [part.strip() for part in line.split("|")]
+            if len(parts) != 5:
+                await self._reply(
+                    update,
+                    "Неверный формат. Используйте 5 частей через вертикальную черту.|\n"
+                    "Format incorrect: 5 éléments séparés par |.",
+                    reply_markup=self._admin_cancel_markup(),
+                )
+                return False
+            entries.append(
+                {
+                    "word": parts[0],
+                    "emoji": parts[1],
+                    "translation": parts[2],
+                    "example_fr": parts[3],
+                    "example_ru": parts[4],
+                }
+            )
+
+        content = self._get_content(context)
+        content.vocabulary = entries
+        await self._reply(
+            update,
+            f"Обновлено слов: {len(entries)}.\nNombre d'entrées: {len(entries)}.",
+            reply_markup=self._admin_menu_markup(),
+        )
+        return True
+
 
     async def _handle_menu_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         text = (update.message.text or "").strip()
@@ -478,102 +1023,53 @@ class ConfettiTelegramBot:
                 update,
                 "Пожалуйста, воспользуйтесь меню внизу экрана.\n"
                 "Merci de choisir une option dans le menu ci-dessous.",
-                reply_markup=self._main_menu_markup(),
+                reply_markup=self._main_menu_markup_for(update),
             )
             return
         await handler(update, context)
 
     async def _send_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        text = (
-            "🇫🇷 Voici nos horaires actuels :\n"
-            "🇷🇺 Наше актуальное расписание:\n\n"
-            "☀️ Matin / Утро : 10:00 – 12:00\n"
-            "🌤 Après-midi / День : 14:00 – 16:00\n"
-            "🌙 Soir / Вечер : 18:00 – 20:00"
-        )
-        await self._reply(update, text, reply_markup=self._main_menu_markup())
+        content = self._get_content(context)
+        await self._reply(update, content.schedule, reply_markup=self._main_menu_markup_for(update))
 
     async def _send_about(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        text = (
-            "🇫🇷 À propos de nous\n"
-            "Notre compagnie existe déjà depuis 8 ans, et pendant ce temps elle est devenue un lieu où les enfants découvrent toute la beauté de la langue et de la culture françaises.\n"
-            "Notre équipe est composée uniquement de professionnels :\n"
-            "• des enseignants avec une formation supérieure spécialisée et des diplômes avec mention,\n"
-            "• des titulaires du certificat international DALF,\n"
-            "• des professeurs avec plus de 10 ans d’expérience,\n"
-            "• ainsi que des locuteurs natifs qui partagent l’authenticité de la culture française.\n"
-            "Chaque année, nous participons à des festivals francophones dans toute la Russie — de Moscou et Saint-Pétersbourg à Ekaterinbourg et Valdaï. Nous nous produisons régulièrement sur les scènes de notre ville (par exemple à l’école n° 22), nous organisons des fêtes populaires en France, et nous clôturons chaque saison par un événement festif attendu par tous nos élèves.\n"
-            "Notre objectif principal est simple mais essentiel : 👉 que les enfants tombent amoureux du français ❤️\n\n"
-            "🇷🇺 О нас\n"
-            "Наша студия существует уже 8 лет, и за это время она стала местом, где дети открывают для себя красоту французского языка и культуры.\n"
-            "С нами работают только профессионалы:\n"
-            "• преподаватели с высшим профильным образованием и красными дипломами,\n"
-            "• обладатели международного сертификата DALF,\n"
-            "• педагоги со стажем более 10 лет,\n"
-            "• а также носители языка, которые делятся аутентичным французским опытом.\n"
-            "Каждый год мы участвуем во франкофонных фестивалях по всей России — от Москвы и Санкт-Петербурга до Екатеринбурга и Валдая. Мы регулярно выступаем на площадках города (например, в школе № 22), организуем праздники, любимые во Франции, и делаем яркое закрытие сезона, которое ждут все наши ученики.\n"
-            "Наша главная цель проста и очень важна: 👉 чтобы дети полюбили французский язык ❤️\n\n"
-            "🎭 Chez nous, Confetti = fête !\n🎭 У нас Конфетти = это всегда праздник!"
-        )
-        await self._reply(update, text, reply_markup=self._main_menu_markup())
+        content = self._get_content(context)
+        await self._reply(update, content.about, reply_markup=self._main_menu_markup_for(update))
 
     async def _send_teachers(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        text = (
-            "🇫🇷 Nos enseignants sont passionnés et expérimentés.\n"
-            "🇷🇺 Наши преподаватели — увлечённые и опытные педагоги.\n\n"
-            "👩‍🏫 Ksenia Nastytsch\n"
-            "Enseignante de français avec plus de 20 ans d’expérience.\n"
-            "Diplômée de l’Université d’État de Perm en philologie (français, anglais, allemand et espagnol).\n"
-            "Titulaire du certificat international DALF, a effectué des stages en France (Grenoble, Pau, Metz).\n\n"
-            "Ксения Настыч\n"
-            "Преподаватель французского языка с опытом работы более 20 лет.\n"
-            "Окончила Пермский государственный университет по специальности «Филология».\n"
-            "Обладатель международного сертификата DALF, проходила стажировки во Франции (Гренобль, По, Мец). Организовывала в течение трёх лет «русские сезоны» в Посольстве России во Франции.\n\n"
-            "👩‍🏫 Анастасия Банникова\n\n"
-            "🇫🇷 Alain Marinot\nLocuteur natif du français avec un accent académique parisien. Acteur et âme de l’école, il parle exclusivement en français — un grand avantage pour les élèves.\n\n"
-            "🇷🇺 Ален Марино\nНоситель французского языка с академическим парижским акцентом. Актёр, душа школы, говорит исключительно по-французски — большая удача для учеников.\n\n"
-            "🇫🇷 Lyudmila Anatolievna Krasnoborova\nEnseignante de français, docteur en philologie, maîtresse de conférences à l’Université d’État de Perm (PGNIU).\n"
-            "Examinateur DALF, prépare aux examens du baccalauréat russe (ЕГЭ) et aux olympiades.\n\n"
-            "🇷🇺 Красноборова Людмила Анатольевна\nПреподаватель французского языка, кандидат филологических наук, доцент ПГНИУ.\n"
-            "Экзаменатор DALF, готовит к ЕГЭ и олимпиадам."
-        )
-        await self._reply(update, text, reply_markup=self._main_menu_markup())
+        content = self._get_content(context)
+        await self._reply(update, content.teachers, reply_markup=self._main_menu_markup_for(update))
 
     async def _send_payment_instructions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        text = (
-            "🇫🇷 Veuillez envoyer une photo ou un reçu de paiement ici.\n"
-            "🇷🇺 Пожалуйста, отправьте сюда фото или чек об оплате.\n\n"
-            "📌 Après vérification, nous confirmerons votre inscription.\n"
-            "📌 После проверки мы подтвердим вашу запись."
-        )
-        await self._reply(update, text, reply_markup=self._main_menu_markup())
+        content = self._get_content(context)
+        await self._reply(update, content.payment, reply_markup=self._main_menu_markup_for(update))
 
     async def _send_album(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        text = (
-            "🇫🇷 Regardez nos meilleurs moments 🎭\n"
-            "🇷🇺 Посмотрите наши лучшие моменты 🎭\n\n"
-            "👉 https://confetti.ru/album"
-        )
-        await self._reply(update, text, reply_markup=self._main_menu_markup())
+        content = self._get_content(context)
+        await self._reply(update, content.album, reply_markup=self._main_menu_markup_for(update))
 
     async def _send_contacts(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        text = (
-            "📞 Téléphone : +7 (900) 000-00-00\n"
-            "📧 Email : confetti@example.com\n"
-            "🌐 Site / Сайт : https://confetti.ru\n"
-            "📲 Telegram : @ConfettiAdmin"
-        )
-        await self._reply(update, text, reply_markup=self._main_menu_markup())
+        content = self._get_content(context)
+        await self._reply(update, content.contacts, reply_markup=self._main_menu_markup_for(update))
 
     async def _send_vocabulary(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        entry = random.choice(self.VOCABULARY)
+        content = self._get_content(context)
+        if not content.vocabulary:
+            await self._reply(
+                update,
+                "Список слов пока пуст. Добавьте варианты через админ-панель.\n"
+                "La liste de vocabulaire est vide pour le moment.",
+                reply_markup=self._main_menu_markup_for(update),
+            )
+            return
+        entry = random.choice(content.vocabulary)
         text = (
             "🎁 Mot du jour / Слово дня :\n\n"
-            f"🇫🇷 {entry['word']} {entry['emoji']}\n"
-            f"🇷🇺 {entry['translation']}\n\n"
-            f"💬 Exemple : {entry['example_fr']} — {entry['example_ru']}"
+            f"🇫🇷 {entry.get('word', '—')} {entry.get('emoji', '')}\n"
+            f"🇷🇺 {entry.get('translation', '—')}\n\n"
+            f"💬 Exemple : {entry.get('example_fr', '—')} — {entry.get('example_ru', '—')}"
         )
-        await self._reply(update, text, reply_markup=self._main_menu_markup())
+        await self._reply(update, text, reply_markup=self._main_menu_markup_for(update))
 
 
 @dataclass(frozen=True)
