@@ -439,6 +439,14 @@ class ConfettiTelegramBot:
         chat = update.effective_chat
         return bool(chat and self.is_admin_chat(chat))
 
+    def _application_data(self, context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
+        """Return application-level storage across PTB versions."""
+
+        if hasattr(context, "application_data"):
+            return context.application_data  # type: ignore[attr-defined]
+
+        return context.application.bot_data
+
     def _remember_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat = update.effective_chat
         if not chat:
@@ -447,7 +455,7 @@ class ConfettiTelegramBot:
         known.add(_coerce_chat_id_from_object(chat))
 
     def _get_known_chats(self, context: ContextTypes.DEFAULT_TYPE) -> set[int]:
-        store = context.application_data.setdefault("known_chats", set())
+        store = self._application_data(context).setdefault("known_chats", set())
         if isinstance(store, set):
             return store
         if isinstance(store, list):
@@ -457,23 +465,23 @@ class ConfettiTelegramBot:
                     converted.add(_coerce_chat_id(chat_id))
                 except ValueError:
                     continue
-            context.application_data["known_chats"] = converted
+            self._application_data(context)["known_chats"] = converted
             return converted
         converted: set[int] = set()
-        context.application_data["known_chats"] = converted
+        self._application_data(context)["known_chats"] = converted
         return converted
 
     def _get_content(self, context: ContextTypes.DEFAULT_TYPE) -> BotContent:
-        content = context.application_data.get("content")
+        content = self._application_data(context).get("content")
         if isinstance(content, BotContent):
             return content
         if isinstance(content, dict):
             # Backward compatibility if someone serialised a dict previously.
             restored = self.content_template.copy()
-            context.application_data["content"] = restored
+            self._application_data(context)["content"] = restored
             return restored
         fresh = self.content_template.copy()
-        context.application_data["content"] = fresh
+        self._application_data(context)["content"] = fresh
         return fresh
 
     def _store_registration(
@@ -494,11 +502,11 @@ class ConfettiTelegramBot:
             "submitted_by_id": getattr(user, "id", None) if user else None,
             "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
         }
-        registrations = context.application_data.setdefault("registrations", [])
+        registrations = self._application_data(context).setdefault("registrations", [])
         if isinstance(registrations, list):
             registrations.append(record)
         else:
-            context.application_data["registrations"] = [record]
+            self._application_data(context)["registrations"] = [record]
 
     async def _start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Send the greeting and display the main menu."""
@@ -918,7 +926,7 @@ class ConfettiTelegramBot:
     async def _admin_show_registrations(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        registrations = context.application_data.get("registrations", [])
+        registrations = self._application_data(context).get("registrations", [])
         if not isinstance(registrations, list) or not registrations:
             await self._reply(
                 update,
