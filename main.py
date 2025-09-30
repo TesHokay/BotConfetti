@@ -266,10 +266,9 @@ class ConfettiTelegramBot:
     REGISTRATION_PROGRAM = 1
     REGISTRATION_CHILD_NAME = 2
     REGISTRATION_CLASS = 3
-    REGISTRATION_CONTACT_PERSON = 4
-    REGISTRATION_PHONE = 5
-    REGISTRATION_TIME = 6
-    REGISTRATION_PAYMENT = 7
+    REGISTRATION_PHONE = 4
+    REGISTRATION_TIME = 5
+    REGISTRATION_PAYMENT = 6
 
     CANCELLATION_PROGRAM = 21
     CANCELLATION_REASON = 22
@@ -472,9 +471,6 @@ class ConfettiTelegramBot:
                 ],
                 self.REGISTRATION_CLASS: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_class),
-                ],
-                self.REGISTRATION_CONTACT_PERSON: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_contact_person),
                 ],
                 self.REGISTRATION_PHONE: [
                     MessageHandler(filters.CONTACT, self._registration_collect_phone_contact),
@@ -708,7 +704,6 @@ class ConfettiTelegramBot:
             "program": data.get("program", ""),
             "child_name": data.get("child_name", ""),
             "class": data.get("class", ""),
-            "contact_person": data.get("contact_person", ""),
             "phone": data.get("phone", ""),
             "time": data.get("time", ""),
             "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
@@ -778,8 +773,7 @@ class ConfettiTelegramBot:
                 if not self._is_admin_update(update, context):
                     await self._reply(
                         update,
-                        "Этот раздел доступен только администраторам.\n"
-                        "Section réservée aux administrateurs.",
+                        "Этот раздел доступен только администраторам.",
                         reply_markup=self._main_menu_markup_for(update, context),
                     )
                     return
@@ -787,8 +781,7 @@ class ConfettiTelegramBot:
                 if sent:
                     await self._reply(
                         update,
-                        "Экспорт завершён. Таблица отправлена сообщением выше.\n"
-                        "Le tableau vient d'être envoyé dans cette conversation.",
+                        "Экспорт завершён. Таблица отправлена сообщением выше.",
                         reply_markup=self._admin_menu_markup(),
                     )
                 return
@@ -804,26 +797,19 @@ class ConfettiTelegramBot:
             "👉 Пожалуйста, выберите раздел в меню ниже."
         )
         if self._is_admin_update(update, context):
-            message += (
-                "\n\n🛠 Для управления ботом откройте «Админ-панель» в меню."
-                "\n🛠 Pour administrer le bot, choisissez «Админ-панель»."
-            )
+            message += "\n\n🛠 Для управления ботом откройте «Админ-панель» в меню."
         await self._reply(update, message, reply_markup=self._main_menu_markup_for(update, context))
 
     async def _show_admin_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_admin_update(update, context):
             await self._reply(
                 update,
-                "Эта панель доступна только администраторам.\n"
-                "Ce panneau est réservé aux administrateurs.",
+                "Эта панель доступна только администраторам.",
                 reply_markup=self._main_menu_markup_for(update, context),
             )
             return
         self._remember_chat(update, context)
-        message = (
-            "Админ-панель открыта. Выберите действие ниже.\n"
-            "Panneau d'administration ouvert — choisissez une action."
-        )
+        message = "Админ-панель открыта. Выберите действие ниже."
         await self._reply(update, message, reply_markup=self._admin_menu_markup())
 
     async def _send_greeting(self, update: Update, context: Optional[ContextTypes.DEFAULT_TYPE] = None) -> None:
@@ -836,10 +822,7 @@ class ConfettiTelegramBot:
             "👉 Пожалуйста, выберите раздел в меню ниже."
         )
         if self._is_admin_update(update, context):
-            greeting += (
-                "\n\n🛠 У вас есть доступ к админ-панели — нажмите кнопку ниже, чтобы управлять контентом."
-                "\n🛠 Vous pouvez gérer le contenu via le bouton «Админ-панель»."
-            )
+            greeting += "\n\n🛠 У вас есть доступ к админ-панели — нажмите кнопку ниже, чтобы управлять контентом."
         await self._reply(update, greeting, reply_markup=self._main_menu_markup_for(update, context))
 
     async def _reply(
@@ -1063,16 +1046,6 @@ class ConfettiTelegramBot:
         context.user_data.setdefault("registration", {})["class"] = update.message.text.strip()
         await self._reply(
             update,
-            "🇫🇷 Qui est la personne de contact ?\n🇷🇺 Кто будет контактным лицом?",
-        )
-        return self.REGISTRATION_CONTACT_PERSON
-
-    async def _registration_collect_contact_person(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        context.user_data.setdefault("registration", {})["contact_person"] = update.message.text.strip()
-        await self._reply(
-            update,
             "🇫🇷 Envoyez le numéro de téléphone (bouton en bas).\n"
             "🇷🇺 Отправьте номер телефона (кнопка внизу).",
             reply_markup=self._phone_keyboard(),
@@ -1257,7 +1230,6 @@ class ConfettiTelegramBot:
             "🇫🇷 Votre demande a été enregistrée !\n"
             "🇷🇺 Ваша заявка принята!\n\n"
             f"👦 Enfant : {data.get('child_name', '—')} ({data.get('class', '—')})\n"
-            f"👤 Contact : {data.get('contact_person', '—')}\n"
             f"📱 Téléphone : {data.get('phone', '—')}\n"
             f"🕒 Heure : {data.get('time', '—')}\n"
             f"📚 Programme : {data.get('program', '—')}\n"
@@ -1277,7 +1249,7 @@ class ConfettiTelegramBot:
             "🆕 Новая заявка / Nouvelle inscription\n"
             f"📚 Программа: {data.get('program', '—')}\n"
             f"👦 Участник: {data.get('child_name', '—')} ({data.get('class', '—')})\n"
-            f"👤 Контакт: {data.get('contact_person', '—')} | {data.get('phone', '—')}\n"
+            f"📱 Телефон: {data.get('phone', '—')}\n"
             f"🕒 Время: {data.get('time', '—')}\n"
             f"💳 Статус оплаты: {'получено' if attachments else 'ожидается'}"
         )
@@ -1660,10 +1632,10 @@ class ConfettiTelegramBot:
                 "Программа",
                 "Участник",
                 "Класс / возраст",
-                "Контактное лицо",
                 "Телефон",
                 "Предпочтительное время",
                 "Оплата",
+                "Вложения оплаты",
                 "Комментарий",
                 "Отправитель",
                 "Чат",
@@ -1675,16 +1647,22 @@ class ConfettiTelegramBot:
             payment_status = "Получено" if payment_media else "Ожидается"
             if payment_media:
                 payment_status += f" ({len(payment_media)} влож.)"
+            payment_files = []
+            for item in payment_media:
+                kind = item.get("kind", "") if isinstance(item, dict) else ""
+                file_id = item.get("file_id", "") if isinstance(item, dict) else ""
+                if kind and file_id:
+                    payment_files.append(f"{kind}: {file_id}")
             builder.add_row(
                 (
                     record.get("created_at") or "",
                     record.get("program") or "",
                     record.get("child_name") or "",
                     record.get("class") or "",
-                    record.get("contact_person") or "",
                     record.get("phone") or "",
                     record.get("time") or "",
                     payment_status,
+                    "\n".join(payment_files) if payment_files else "",
                     record.get("payment_note") or "",
                     record.get("submitted_by") or "",
                     record.get("chat_title") or "",
