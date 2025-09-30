@@ -21,23 +21,64 @@ from datetime import datetime
 from pathlib import Path
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
-from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
-from telegram.ext import (
-    Application,
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-    ConversationHandler,
-    MessageHandler,
-    filters,
+
+TELEGRAM_IMPORT_ERROR: ModuleNotFoundError | None = None
+
+_TELEGRAM_DEPENDENCY_INSTRUCTIONS = (
+    "python-telegram-bot is required to run this project. "
+    "Install it with 'pip install \"python-telegram-bot[rate-limiter]\"'."
 )
 
-try:  # pragma: no cover - import error path depends on the environment
-    from telegram.ext import AIORateLimiter
-except ImportError:  # pragma: no cover - see comment above
-    AIORateLimiter = None  # type: ignore[assignment]
+
+class _MissingTelegramModule:
+    """Placeholder that raises a helpful error when used without telegram."""
+
+    def __getattr__(self, name: str) -> Any:  # pragma: no cover - guard clause
+        if TELEGRAM_IMPORT_ERROR is not None:
+            raise RuntimeError(_TELEGRAM_DEPENDENCY_INSTRUCTIONS) from TELEGRAM_IMPORT_ERROR
+        raise RuntimeError(_TELEGRAM_DEPENDENCY_INSTRUCTIONS)
+
+
+if TYPE_CHECKING:
+    from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+    from telegram.ext import (
+        AIORateLimiter as _AIORateLimiter,
+        Application,
+        ApplicationBuilder,
+        CommandHandler,
+        ContextTypes,
+        ConversationHandler,
+        MessageHandler,
+        filters,
+    )
+else:  # pragma: no cover - import depends on environment
+    try:
+        from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+        from telegram.ext import (
+            Application,
+            ApplicationBuilder,
+            CommandHandler,
+            ContextTypes,
+            ConversationHandler,
+            MessageHandler,
+            filters,
+        )
+    except ModuleNotFoundError as exc:  # pragma: no cover - environment specific
+        TELEGRAM_IMPORT_ERROR = exc
+        KeyboardButton = ReplyKeyboardMarkup = ReplyKeyboardRemove = Update = object  # type: ignore[assignment]
+        Application = ApplicationBuilder = CommandHandler = ConversationHandler = MessageHandler = object  # type: ignore[assignment]
+        ContextTypes = object  # type: ignore[assignment]
+        filters = _MissingTelegramModule()  # type: ignore[assignment]
+        _AIORateLimiter = None
+    else:
+        try:
+            from telegram.ext import AIORateLimiter as _AIORateLimiter
+        except ImportError:  # pragma: no cover - optional dependency
+            _AIORateLimiter = None
+
+AIORateLimiter = _AIORateLimiter
 
 
 LOGGER = logging.getLogger(__name__)
@@ -45,6 +86,13 @@ LOGGER = logging.getLogger(__name__)
 
 ChatIdInput = Union[int, str]
 AdminChatIdsInput = Union[ChatIdInput, Iterable[ChatIdInput], None]
+
+
+def _require_telegram() -> None:
+    """Ensure python-telegram-bot is installed before continuing."""
+
+    if TELEGRAM_IMPORT_ERROR is not None:
+        raise RuntimeError(_TELEGRAM_DEPENDENCY_INSTRUCTIONS) from TELEGRAM_IMPORT_ERROR
 
 
 @dataclass
@@ -282,6 +330,8 @@ class ConfettiTelegramBot:
 
     def build_application(self) -> Application:
         """Construct the PTB application."""
+
+        _require_telegram()
 
         builder = ApplicationBuilder().token(self.token)
 
@@ -1181,6 +1231,12 @@ def main() -> None:  # pragma: no cover - thin wrapper
         raise SystemExit(1)
 
     admin_chat_ids = os.environ.get("CONFETTI_ADMIN_CHAT_IDS", "")
+
+    try:
+        _require_telegram()
+    except RuntimeError as exc:
+        LOGGER.error("%s", exc)
+        raise SystemExit(1) from exc
 
     bot = ConfettiTelegramBot(token=token, admin_chat_ids=admin_chat_ids)
     application = bot.build_application()
