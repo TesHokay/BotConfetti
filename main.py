@@ -19,9 +19,11 @@ import random
 import re
 from datetime import datetime
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from xml.sax.saxutils import escape
 
 
 TELEGRAM_IMPORT_ERROR: ModuleNotFoundError | None = None
@@ -279,16 +281,18 @@ class ConfettiTelegramBot:
     ADMIN_MENU_BUTTON = "🛠 Админ-панель"
     ADMIN_BACK_TO_USER_BUTTON = "⬅️ Пользовательское меню"
     ADMIN_BROADCAST_BUTTON = "📣 Рассылка"
-    ADMIN_VIEW_APPLICATIONS_BUTTON = "📬 Заявки"
+    ADMIN_EXPORT_TABLE_BUTTON = "📊 Таблица заявок"
     ADMIN_ADD_ADMIN_BUTTON = "➕ Добавить администратора"
     ADMIN_EDIT_SCHEDULE_BUTTON = "🗓 Редактировать расписание"
     ADMIN_EDIT_ABOUT_BUTTON = "ℹ️ Редактировать информацию"
     ADMIN_EDIT_TEACHERS_BUTTON = "👩‍🏫 Редактировать преподавателей"
-    ADMIN_EDIT_PAYMENT_BUTTON = "💳 Редактировать оплату"
     ADMIN_EDIT_ALBUM_BUTTON = "📸 Редактировать фотоальбом"
     ADMIN_EDIT_CONTACTS_BUTTON = "📞 Редактировать контакты"
     ADMIN_EDIT_VOCABULARY_BUTTON = "📚 Редактировать словарь"
-    ADMIN_CANCEL_BUTTON = "🚫 Отмена"
+    ADMIN_CANCEL_KEYWORDS = ("отмена", "annuler", "cancel")
+    ADMIN_CANCEL_PROMPT = (
+        "\n\nЧтобы отменить, напишите «Отмена».\nPour annuler, envoyez «Annuler»."
+    )
 
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание / Horaires"),
@@ -399,6 +403,8 @@ class ConfettiTelegramBot:
         normalised = _normalise_admin_chat_ids(self.admin_chat_ids)
         self.admin_chat_ids = normalised
         self._runtime_admin_ids: set[int] = set(normalised)
+        self._admin_cancel_tokens: set[str] = {token.lower() for token in self.ADMIN_CANCEL_KEYWORDS}
+        self._bot_username: Optional[str] = None
 
     def build_profile(self, chat: Any, user: Any | None = None) -> "UserProfile":
         """Return the appropriate profile for ``chat`` and optional ``user``."""
@@ -564,21 +570,17 @@ class ConfettiTelegramBot:
 
     def _admin_menu_markup(self) -> ReplyKeyboardMarkup:
         keyboard = [
-            [self.ADMIN_BACK_TO_USER_BUTTON, self.ADMIN_CANCEL_BUTTON],
-            [self.ADMIN_BROADCAST_BUTTON, self.ADMIN_VIEW_APPLICATIONS_BUTTON],
+            [self.ADMIN_BACK_TO_USER_BUTTON],
+            [self.ADMIN_BROADCAST_BUTTON, self.ADMIN_EXPORT_TABLE_BUTTON],
             [self.ADMIN_ADD_ADMIN_BUTTON],
             [self.ADMIN_EDIT_SCHEDULE_BUTTON],
             [self.ADMIN_EDIT_ABOUT_BUTTON],
             [self.ADMIN_EDIT_TEACHERS_BUTTON],
-            [self.ADMIN_EDIT_PAYMENT_BUTTON],
             [self.ADMIN_EDIT_ALBUM_BUTTON],
             [self.ADMIN_EDIT_CONTACTS_BUTTON],
             [self.ADMIN_EDIT_VOCABULARY_BUTTON],
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    def _admin_cancel_markup(self) -> ReplyKeyboardMarkup:
-        return ReplyKeyboardMarkup([[self.ADMIN_CANCEL_BUTTON]], resize_keyboard=True)
 
     def _is_admin_identity(self, *, chat: Any | None = None, user: Any | None = None) -> bool:
         """Check whether either ``chat`` or ``user`` matches an admin id."""
@@ -768,6 +770,29 @@ class ConfettiTelegramBot:
         """Send the greeting and display the main menu."""
 
         self._remember_chat(update, context)
+
+        args = context.args if context.args is not None else []
+        if args:
+            payload = args[0]
+            if payload == "registrations_excel":
+                if not self._is_admin_update(update, context):
+                    await self._reply(
+                        update,
+                        "Этот раздел доступен только администраторам.\n"
+                        "Section réservée aux administrateurs.",
+                        reply_markup=self._main_menu_markup_for(update, context),
+                    )
+                    return
+                sent = await self._send_registrations_excel(update, context)
+                if sent:
+                    await self._reply(
+                        update,
+                        "Экспорт завершён. Таблица отправлена сообщением выше.\n"
+                        "Le tableau vient d'être envoyé dans cette conversation.",
+                        reply_markup=self._admin_menu_markup(),
+                    )
+                return
+
         await self._send_greeting(update, context)
 
     async def _show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1282,7 +1307,7 @@ class ConfettiTelegramBot:
         pending = context.chat_data.get("pending_admin_action")
 
         if pending and profile.is_admin:
-            if text == self.ADMIN_CANCEL_BUTTON:
+            if text and text.strip().lower() in self._admin_cancel_tokens:
                 context.chat_data.pop("pending_admin_action", None)
                 await self._reply(
                     update,
@@ -1301,82 +1326,82 @@ class ConfettiTelegramBot:
             return
 
         if profile.is_admin and text:
-            if text == self.ADMIN_MENU_BUTTON:
+            command_text = text.strip()
+            if command_text == self.ADMIN_MENU_BUTTON:
                 await self._show_admin_menu(update, context)
                 return
-            if text == self.ADMIN_BACK_TO_USER_BUTTON:
+            if command_text == self.ADMIN_BACK_TO_USER_BUTTON:
                 await self._show_main_menu(update, context)
                 return
-            if text == self.ADMIN_BROADCAST_BUTTON:
+            if command_text == self.ADMIN_BROADCAST_BUTTON:
                 context.chat_data["pending_admin_action"] = {"type": "broadcast"}
                 await self._reply(
                     update,
                     "Отправьте сообщение или медиа для рассылки.\n"
-                    "Envoyez le message ou les médias à diffuser.",
-                    reply_markup=self._admin_cancel_markup(),
+                    "Envoyez le message ou les médias à diffuser."
+                    + self.ADMIN_CANCEL_PROMPT,
+                    reply_markup=ReplyKeyboardRemove(),
                 )
                 return
-            if text == self.ADMIN_VIEW_APPLICATIONS_BUTTON:
-                await self._admin_show_registrations(update, context)
+            if command_text == self.ADMIN_EXPORT_TABLE_BUTTON:
+                await self._admin_share_registrations_table(update, context)
                 return
-            if text == self.ADMIN_ADD_ADMIN_BUTTON:
+            if command_text == self.ADMIN_ADD_ADMIN_BUTTON:
                 context.chat_data["pending_admin_action"] = {"type": "add_admin"}
                 await self._reply(
                     update,
                     "Введите chat_id нового администратора.\n"
-                    "Entrez le chat_id de l'administrateur.",
-                    reply_markup=self._admin_cancel_markup(),
+                    "Entrez le chat_id de l'administrateur."
+                    + self.ADMIN_CANCEL_PROMPT,
+                    reply_markup=ReplyKeyboardRemove(),
                 )
                 return
-            if text == self.ADMIN_EDIT_SCHEDULE_BUTTON:
+            if command_text == self.ADMIN_EDIT_SCHEDULE_BUTTON:
                 await self._prompt_admin_content_edit(
                     update,
                     context,
                     field="schedule",
-                    instruction="Отправьте текст и вложения нового расписания.",
+                    instruction="Отправьте текст и вложения нового расписания."
+                    + self.ADMIN_CANCEL_PROMPT,
                 )
                 return
-            if text == self.ADMIN_EDIT_ABOUT_BUTTON:
+            if command_text == self.ADMIN_EDIT_ABOUT_BUTTON:
                 await self._prompt_admin_content_edit(
                     update,
                     context,
                     field="about",
-                    instruction="Отправьте обновлённый блок «О студии» (текст, фото, видео).",
+                    instruction="Отправьте обновлённый блок «О студии» (текст, фото, видео)."
+                    + self.ADMIN_CANCEL_PROMPT,
                 )
                 return
-            if text == self.ADMIN_EDIT_TEACHERS_BUTTON:
+            if command_text == self.ADMIN_EDIT_TEACHERS_BUTTON:
                 await self._prompt_admin_content_edit(
                     update,
                     context,
                     field="teachers",
-                    instruction="Поделитесь новым описанием преподавателей и медиа.",
+                    instruction="Поделитесь новым описанием преподавателей и медиа."
+                    + self.ADMIN_CANCEL_PROMPT,
                 )
                 return
-            if text == self.ADMIN_EDIT_PAYMENT_BUTTON:
-                await self._prompt_admin_content_edit(
-                    update,
-                    context,
-                    field="payment",
-                    instruction="Отправьте инструкции по оплате (можно с изображениями).",
-                )
-                return
-            if text == self.ADMIN_EDIT_ALBUM_BUTTON:
+            if command_text == self.ADMIN_EDIT_ALBUM_BUTTON:
                 await self._prompt_admin_content_edit(
                     update,
                     context,
                     field="album",
-                    instruction="Отправьте ссылку или материалы для фотоальбома.",
+                    instruction="Отправьте ссылку или материалы для фотоальбома."
+                    + self.ADMIN_CANCEL_PROMPT,
                 )
                 return
-            if text == self.ADMIN_EDIT_CONTACTS_BUTTON:
+            if command_text == self.ADMIN_EDIT_CONTACTS_BUTTON:
                 await self._prompt_admin_content_edit(
                     update,
                     context,
                     field="contacts",
-                    instruction="Введите обновлённые контакты (при необходимости с медиа).",
+                    instruction="Введите обновлённые контакты (при необходимости с медиа)."
+                    + self.ADMIN_CANCEL_PROMPT,
                 )
                 return
-            if text == self.ADMIN_EDIT_VOCABULARY_BUTTON:
+            if command_text == self.ADMIN_EDIT_VOCABULARY_BUTTON:
                 await self._prompt_admin_vocabulary_edit(update, context)
                 return
 
@@ -1446,8 +1471,9 @@ class ConfettiTelegramBot:
             await self._reply(
                 update,
                 "Пожалуйста, отправьте числовой chat_id администратора.\n"
-                "Veuillez envoyer un identifiant numérique.",
-                reply_markup=self._admin_cancel_markup(),
+                "Veuillez envoyer un identifiant numérique."
+                + self.ADMIN_CANCEL_PROMPT,
+                reply_markup=ReplyKeyboardRemove(),
             )
             context.chat_data["pending_admin_action"] = {"type": "add_admin"}
             return
@@ -1506,7 +1532,7 @@ class ConfettiTelegramBot:
             "Текущий текст:"
             f"\n{text_preview}\n{media_note}"
         )
-        await self._reply(update, message, reply_markup=self._admin_cancel_markup())
+        await self._reply(update, message, reply_markup=ReplyKeyboardRemove())
 
     async def _prompt_admin_vocabulary_edit(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1533,7 +1559,7 @@ class ConfettiTelegramBot:
             "\nEnvoyez les entrées sous forme: mot|emoji|traduction|phrase FR|phrase RU."
             f"\n\nТекущий список:\n{sample}"
         )
-        await self._reply(update, message, reply_markup=self._admin_cancel_markup())
+        await self._reply(update, message + self.ADMIN_CANCEL_PROMPT, reply_markup=ReplyKeyboardRemove())
 
     async def _admin_send_broadcast(
         self,
@@ -1574,7 +1600,7 @@ class ConfettiTelegramBot:
             result += "\nНе удалось доставить сообщения в чаты: " + ", ".join(failures)
         await self._reply(update, result, reply_markup=self._admin_menu_markup())
 
-    async def _admin_show_registrations(
+    async def _admin_share_registrations_table(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         registrations = self._application_data(context).get("registrations", [])
@@ -1586,31 +1612,190 @@ class ConfettiTelegramBot:
             )
             return
 
-        lines = ["Последние заявки (до 10):"]
-        for index, record in enumerate(reversed(registrations[-10:]), start=1):
-            child = record.get("child_name") or "—"
-            klass = record.get("class") or "—"
-            program = record.get("program") or "—"
-            contact = record.get("contact_person") or "—"
-            phone = record.get("phone") or "—"
-            created = record.get("created_at") or "—"
-            payment_media = record.get("payment_media") or []
-            payment_note = record.get("payment_note") or ""
-            if payment_media:
-                payment_status = f"получено ({len(payment_media)} влож.)"
-            else:
-                payment_status = "ожидается"
-            lines.append(
-                f"{index}. {child} ({klass})\n"
-                f"   Программа: {program}\n"
-                f"   Контакт: {contact} | {phone}\n"
-                f"   Время: {record.get('time') or '—'} | Добавлено: {created}\n"
-                f"   💳 Статус оплаты: {payment_status}"
+        export_path, generated_at = self._export_registrations_excel(context, registrations)
+        preview_lines = self._format_registrations_preview(registrations)
+        deeplink = await self._build_registrations_deeplink(context)
+
+        message_parts = [
+            "📊 Экспорт заявок готов!\n",
+            f"🗂 Всего записей: {len(registrations)}",
+            f"🕒 Обновлено: {generated_at}",
+        ]
+        if preview_lines:
+            message_parts.append("")
+            message_parts.extend(preview_lines)
+        if deeplink:
+            message_parts.append("")
+            message_parts.append(f"🔗 Таблица: {deeplink}")
+            message_parts.append(
+                "Нажмите ссылку, чтобы в любой момент получить свежую версию."
             )
-            if payment_note:
-                lines.append(f"   📝 Комментарий: {payment_note}")
-        message = "\n\n".join(lines)
-        await self._reply(update, message, reply_markup=self._admin_menu_markup())
+        else:
+            message_parts.append("")
+            message_parts.append(
+                "🔽 Файл с таблицей отправлен ниже. Сохраните его в облаке Telegram для быстрого доступа."
+            )
+
+        await self._reply(
+            update,
+            "\n".join(message_parts),
+            reply_markup=self._admin_menu_markup(),
+        )
+        await self._send_registrations_excel(
+            update,
+            context,
+            path=export_path,
+            generated_at=generated_at,
+        )
+
+    def _export_registrations_excel(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        registrations: list[dict[str, Any]],
+    ) -> tuple[Path, str]:
+        builder = _SimpleXlsxBuilder(sheet_name="Заявки")
+        builder.add_row(
+            (
+                "Дата заявки",
+                "Программа",
+                "Участник",
+                "Класс / возраст",
+                "Контактное лицо",
+                "Телефон",
+                "Предпочтительное время",
+                "Оплата",
+                "Комментарий",
+                "Отправитель",
+                "Чат",
+            )
+        )
+
+        for record in registrations:
+            payment_media = record.get("payment_media") or []
+            payment_status = "Получено" if payment_media else "Ожидается"
+            if payment_media:
+                payment_status += f" ({len(payment_media)} влож.)"
+            builder.add_row(
+                (
+                    record.get("created_at") or "",
+                    record.get("program") or "",
+                    record.get("child_name") or "",
+                    record.get("class") or "",
+                    record.get("contact_person") or "",
+                    record.get("phone") or "",
+                    record.get("time") or "",
+                    payment_status,
+                    record.get("payment_note") or "",
+                    record.get("submitted_by") or "",
+                    record.get("chat_title") or "",
+                )
+            )
+
+        generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        export_path = Path("data") / "exports" / "confetti_registrations.xlsx"
+        builder.to_file(export_path)
+
+        storage = self._application_data(context)
+        exports_meta = storage.setdefault("exports", {})
+        if isinstance(exports_meta, dict):
+            exports_meta["registrations"] = {
+                "generated_at": generated_at,
+                "path": str(export_path),
+            }
+        else:
+            storage["exports"] = {
+                "registrations": {
+                    "generated_at": generated_at,
+                    "path": str(export_path),
+                }
+            }
+
+        return export_path, generated_at
+
+    def _format_registrations_preview(
+        self, registrations: list[dict[str, Any]]
+    ) -> list[str]:
+        if not registrations:
+            return []
+
+        preview = ["🆕 Последние заявки:"]
+        latest = registrations[-3:]
+        for record in reversed(latest):
+            child = record.get("child_name") or "—"
+            program = record.get("program") or "—"
+            created = record.get("created_at") or "—"
+            preview.append(f"• {child} | {program} | {created}")
+        remaining = len(registrations) - len(latest)
+        if remaining > 0:
+            preview.append(f"…и ещё {remaining} записей в таблице")
+        return preview
+
+    async def _build_registrations_deeplink(
+        self, context: ContextTypes.DEFAULT_TYPE
+    ) -> Optional[str]:
+        if self._bot_username:
+            return f"https://t.me/{self._bot_username}?start=registrations_excel"
+
+        try:
+            me = await context.bot.get_me()
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.debug("Failed to resolve bot username: %s", exc)
+            return None
+
+        username = getattr(me, "username", None)
+        if not username:
+            return None
+
+        self._bot_username = username
+        return f"https://t.me/{username}?start=registrations_excel"
+
+    async def _send_registrations_excel(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        path: Optional[Path] = None,
+        generated_at: Optional[str] = None,
+    ) -> bool:
+        chat = update.effective_chat
+        if chat is None:
+            return False
+
+        registrations = self._application_data(context).get("registrations", [])
+        if path is None or generated_at is None:
+            if not isinstance(registrations, list) or not registrations:
+                await self._reply(
+                    update,
+                    "Заявок пока нет.\nAucune demande enregistrée pour l'instant.",
+                    reply_markup=self._admin_menu_markup(),
+                )
+                return False
+            path, generated_at = self._export_registrations_excel(context, registrations)
+
+        try:
+            chat_id = _coerce_chat_id_from_object(chat)
+        except ValueError:
+            return False
+
+        caption = (
+            "📊 Tableau des inscriptions Confetti\n"
+            f"Обновлено: {generated_at}\n"
+            "Документ включает все заявки и обновляется при каждом экспорте."
+        )
+
+        try:
+            with path.open("rb") as handle:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=handle,
+                    filename=path.name,
+                    caption=caption,
+                )
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Не удалось отправить таблицу заявок: %s", exc)
+            return False
+
+        return True
 
     async def _admin_apply_content_update(
         self,
@@ -1658,8 +1843,9 @@ class ConfettiTelegramBot:
         if not lines:
             await self._reply(
                 update,
-                "Отправьте хотя бы одну строку с данными.\nVeuillez fournir au moins une entrée.",
-                reply_markup=self._admin_cancel_markup(),
+                "Отправьте хотя бы одну строку с данными.\nVeuillez fournir au moins une entrée."
+                + self.ADMIN_CANCEL_PROMPT,
+                reply_markup=ReplyKeyboardRemove(),
             )
             return False
 
@@ -1669,9 +1855,10 @@ class ConfettiTelegramBot:
             if len(parts) != 5:
                 await self._reply(
                     update,
-                    "Неверный формат. Используйте 5 частей через вертикальную черту.|\n"
-                    "Format incorrect: 5 éléments séparés par |.",
-                    reply_markup=self._admin_cancel_markup(),
+                    "Неверный формат. Используйте 5 частей через вертикальную черту.\n"
+                    "Format incorrect: 5 éléments séparés par |."
+                    + self.ADMIN_CANCEL_PROMPT,
+                    reply_markup=ReplyKeyboardRemove(),
                 )
                 return False
             entries.append(
@@ -1800,6 +1987,134 @@ class AdminProfile(UserProfile):
     @property
     def is_admin(self) -> bool:
         return True
+
+
+class _SimpleXlsxBuilder:
+    """Minimal XLSX writer for structured admin exports."""
+
+    def __init__(self, sheet_name: str = "Sheet1") -> None:
+        self.sheet_name = self._sanitise_sheet_name(sheet_name)
+        self.rows: list[list[str]] = []
+
+    def add_row(self, values: Iterable[Any]) -> None:
+        row: list[str] = []
+        for value in values:
+            if value is None:
+                row.append("")
+            else:
+                row.append(str(value))
+        self.rows.append(row)
+
+    def to_file(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with ZipFile(path, "w", ZIP_DEFLATED) as archive:
+            archive.writestr("[Content_Types].xml", self._content_types())
+            archive.writestr("_rels/.rels", self._rels_root())
+            archive.writestr("xl/workbook.xml", self._workbook())
+            archive.writestr("xl/_rels/workbook.xml.rels", self._workbook_rels())
+            archive.writestr("xl/styles.xml", self._styles())
+            archive.writestr("xl/worksheets/sheet1.xml", self._sheet())
+
+    def _sheet(self) -> str:
+        rows_xml: list[str] = []
+        for row_index, row in enumerate(self.rows, start=1):
+            cells: list[str] = []
+            for column_index, value in enumerate(row):
+                cell_reference = f"{self._column_letter(column_index)}{row_index}"
+                style = ' s="1"' if row_index == 1 else ""
+                text = escape(value, {"\n": "&#10;"})
+                cells.append(
+                    f'<c r="{cell_reference}" t="inlineStr"{style}><is><t>{text}</t></is></c>'
+                )
+            rows_xml.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+
+        sheet_data = "".join(rows_xml)
+        return (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" "
+            "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+            f"<sheetData>{sheet_data}</sheetData>"
+            "</worksheet>"
+        )
+
+    def _workbook(self) -> str:
+        return (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" "
+            "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+            "<sheets>"
+            f"<sheet name=\"{escape(self.sheet_name)}\" sheetId=\"1\" r:id=\"rId1\"/>"
+            "</sheets>"
+            "</workbook>"
+        )
+
+    @staticmethod
+    def _content_types() -> str:
+        return (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+            "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+            "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+            "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
+            "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
+            "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
+            "</Types>"
+        )
+
+    @staticmethod
+    def _rels_root() -> str:
+        return (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>"
+            "</Relationships>"
+        )
+
+    @staticmethod
+    def _workbook_rels() -> str:
+        return (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>"
+            "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>"
+            "</Relationships>"
+        )
+
+    @staticmethod
+    def _styles() -> str:
+        return (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">"
+            "<fonts count=\"2\">"
+            "<font><sz val=\"11\"/><color theme=\"1\"/><name val=\"Calibri\"/><family val=\"2\"/></font>"
+            "<font><b/><sz val=\"11\"/><color theme=\"1\"/><name val=\"Calibri\"/><family val=\"2\"/></font>"
+            "</fonts>"
+            "<fills count=\"1\"><fill><patternFill patternType=\"none\"/></fill></fills>"
+            "<borders count=\"1\"><border><left/><right/><top/><bottom/><diagonal/></border></borders>"
+            "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>"
+            "<cellXfs count=\"2\">"
+            "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>"
+            "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>"
+            "</cellXfs>"
+            "<cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles>"
+            "</styleSheet>"
+        )
+
+    @staticmethod
+    def _column_letter(index: int) -> str:
+        result = ""
+        while index >= 0:
+            index, remainder = divmod(index, 26)
+            result = chr(65 + remainder) + result
+            index -= 1
+        return result
+
+    @staticmethod
+    def _sanitise_sheet_name(name: str) -> str:
+        sanitized = re.sub(r"[\\/*?:\[\]]", "", name).strip()
+        if not sanitized:
+            sanitized = "Sheet1"
+        return sanitized[:31]
 
 
 def _normalise_admin_chat_ids(chat_ids: AdminChatIdsInput) -> frozenset[int]:
