@@ -57,6 +57,9 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 
 if TYPE_CHECKING:
     from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+    from telegram.error import InvalidToken as TelegramInvalidToken
+    from telegram.error import NetworkError as TelegramNetworkError
+    from telegram.error import TimedOut as TelegramTimedOut
     from telegram.ext import (
         AIORateLimiter as _AIORateLimiter,
         Application,
@@ -70,6 +73,9 @@ if TYPE_CHECKING:
 else:  # pragma: no cover - import depends on environment
     try:
         from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+        from telegram.error import InvalidToken as TelegramInvalidToken
+        from telegram.error import NetworkError as TelegramNetworkError
+        from telegram.error import TimedOut as TelegramTimedOut
         from telegram.ext import (
             Application,
             ApplicationBuilder,
@@ -85,6 +91,7 @@ else:  # pragma: no cover - import depends on environment
         Application = ApplicationBuilder = CommandHandler = ConversationHandler = MessageHandler = object  # type: ignore[assignment]
         ContextTypes = object  # type: ignore[assignment]
         filters = _MissingTelegramModule()  # type: ignore[assignment]
+        TelegramInvalidToken = TelegramNetworkError = TelegramTimedOut = RuntimeError  # type: ignore[assignment]
         _AIORateLimiter = None
     else:
         try:
@@ -3008,7 +3015,29 @@ def main() -> None:  # pragma: no cover - thin wrapper
     application = bot.build_application()
     # The original project keeps polling outside of the kata scope.  We expose
     # the configured application so that callers can decide how to run it.
-    application.run_polling()
+    try:
+        application.run_polling()
+    except TelegramInvalidToken as exc:  # pragma: no cover - network dependent
+        LOGGER.error(
+            "Telegram отклонил переданный токен. Проверьте значение переменных: %s.",
+            ", ".join(TOKEN_ENVIRONMENT_KEYS),
+        )
+        raise SystemExit(1) from exc
+    except TelegramTimedOut as exc:  # pragma: no cover - network dependent
+        LOGGER.error(
+            "Не удалось подключиться к Telegram: истекло время ожидания (%s).",
+            exc,
+        )
+        LOGGER.error(
+            "Проверьте интернет-соединение, настройки прокси или доступ к api.telegram.org."
+        )
+        raise SystemExit(1) from exc
+    except TelegramNetworkError as exc:  # pragma: no cover - network dependent
+        LOGGER.error("Сетевой сбой при обращении к Telegram: %s", exc)
+        LOGGER.error(
+            "Убедитесь, что есть доступ к сети и что запросы к Telegram не блокируются."
+        )
+        raise SystemExit(1) from exc
 
 
 TOKEN_ENVIRONMENT_KEYS: tuple[str, ...] = (
