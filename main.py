@@ -445,7 +445,21 @@ class ConfettiTelegramBot:
         if hasattr(context, "application_data"):
             return context.application_data  # type: ignore[attr-defined]
 
-        return context.application.bot_data
+        if hasattr(context, "bot_data"):
+            return context.bot_data  # type: ignore[attr-defined]
+
+        application = getattr(context, "application", None)
+        if application is not None and hasattr(application, "bot_data"):
+            return application.bot_data  # type: ignore[attr-defined]
+
+        # Fallback to a dedicated attribute to avoid repeated lookups if nothing matches.
+        storage = getattr(context, "_fallback_application_data", None)
+        if isinstance(storage, dict):
+            return storage
+
+        storage = {}
+        setattr(context, "_fallback_application_data", storage)
+        return storage
 
     def _remember_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat = update.effective_chat
