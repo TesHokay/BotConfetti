@@ -56,7 +56,14 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 
 
 if TYPE_CHECKING:
-    from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+    from telegram import (
+        InlineKeyboardButton,
+        InlineKeyboardMarkup,
+        KeyboardButton,
+        ReplyKeyboardMarkup,
+        ReplyKeyboardRemove,
+        Update,
+    )
     from telegram.error import InvalidToken as TelegramInvalidToken
     from telegram.error import NetworkError as TelegramNetworkError
     from telegram.error import TimedOut as TelegramTimedOut
@@ -64,6 +71,7 @@ if TYPE_CHECKING:
         AIORateLimiter as _AIORateLimiter,
         Application,
         ApplicationBuilder,
+        CallbackQueryHandler,
         CommandHandler,
         ContextTypes,
         ConversationHandler,
@@ -72,13 +80,21 @@ if TYPE_CHECKING:
     )
 else:  # pragma: no cover - import depends on environment
     try:
-        from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+        from telegram import (
+            InlineKeyboardButton,
+            InlineKeyboardMarkup,
+            KeyboardButton,
+            ReplyKeyboardMarkup,
+            ReplyKeyboardRemove,
+            Update,
+        )
         from telegram.error import InvalidToken as TelegramInvalidToken
         from telegram.error import NetworkError as TelegramNetworkError
         from telegram.error import TimedOut as TelegramTimedOut
         from telegram.ext import (
             Application,
             ApplicationBuilder,
+            CallbackQueryHandler,
             CommandHandler,
             ContextTypes,
             ConversationHandler,
@@ -87,7 +103,7 @@ else:  # pragma: no cover - import depends on environment
         )
     except ModuleNotFoundError as exc:  # pragma: no cover - environment specific
         TELEGRAM_IMPORT_ERROR = exc
-        KeyboardButton = ReplyKeyboardMarkup = ReplyKeyboardRemove = Update = object  # type: ignore[assignment]
+        InlineKeyboardButton = InlineKeyboardMarkup = KeyboardButton = ReplyKeyboardMarkup = ReplyKeyboardRemove = Update = object  # type: ignore[assignment]
         Application = ApplicationBuilder = CommandHandler = ConversationHandler = MessageHandler = object  # type: ignore[assignment]
         ContextTypes = object  # type: ignore[assignment]
         filters = _MissingTelegramModule()  # type: ignore[assignment]
@@ -156,78 +172,43 @@ class BotContent:
         return cls(
             schedule=ContentBlock(
                 text=(
-                    "🇫🇷 Voici nos horaires actuels :\n"
-                    "🇷🇺 Наше актуальное расписание:\n\n"
-                    "☀️ Matin / Утро : 10:00 – 12:00\n"
-                    "🌤 Après-midi / День : 14:00 – 16:00\n"
-                    "🌙 Soir / Вечер : 18:00 – 20:00"
+                    "Наше актуальное расписание:\n\n"
+                    "☀️ Утро: 10:00 – 12:00\n"
+                    "🌤 День: 14:00 – 16:00\n"
+                    "🌙 Вечер: 18:00 – 20:00"
                 )
             ),
             about=ContentBlock(
                 text=(
-                    "🇫🇷 À propos de nous\n"
-                    "Notre compagnie existe déjà depuis 8 ans, et pendant ce temps elle est devenue un lieu où les enfants découvrent toute la beauté de la langue et de la culture françaises.\n"
-                    "Notre équipe est composée uniquement de professionnels :\n"
-                    "• des enseignants avec une formation supérieure spécialisée et des diplômes avec mention,\n"
-                    "• des titulaires du certificat international DALF,\n"
-                "• des professeurs avec plus de 10 ans d’expérience,\n"
-                "• ainsi que des locuteurs natifs qui partagent l’authenticité de la culture française.\n"
-                "Chaque année, nous participons à des festivals francophones dans toute la Russie — de Moscou et Saint-Pétersbourg à Ekaterinbourg et Valdaï. Nous nous produisons régulièrement sur les scènes de notre ville (par exemple à l’école n° 22), nous organisons des fêtes populaires en France, et nous clôturons chaque saison par un événement festif attendu par tous nos élèves.\n"
-                "Notre objectif principal est simple mais essentiel : 👉 que les enfants tombent amoureux du français ❤️\n\n"
-                "🇷🇺 О нас\n"
-                "Наша студия существует уже 8 лет, и за это время она стала местом, где дети открывают для себя красоту французского языка и культуры.\n"
-                "С нами работают только профессионалы:\n"
-                "• преподаватели с высшим профильным образованием и красными дипломами,\n"
-                "• обладатели международного сертификата DALF,\n"
-                "• педагоги со стажем более 10 лет,\n"
-                "• а также носители языка, которые делятся аутентичным французским опытом.\n"
-                "Каждый год мы участвуем во франкофонных фестивалях по всей России — от Москвы и Санкт-Петербурга до Екатеринбурга и Валдая. Мы регулярно выступаем на площадках города (например, в школе № 22), организуем праздники, любимые во Франции, и делаем яркое закрытие сезона, которое ждут все наши ученики.\n"
-                "Наша главная цель проста и очень важна: 👉 чтобы дети полюбили французский язык ❤️\n\n"
-                "🎭 Chez nous, Confetti = fête !\n🎭 У нас Конфетти = это всегда праздник!"
+                    "О студии\n"
+                    "Наша студия существует уже 8 лет и стала местом, где дети узнают красоту французского языка и культуры.\n"
+                    "С нами работают только профессионалы: преподаватели с высшим профильным образованием и красными дипломами, обладатели международного сертификата DALF, педагоги со стажем более 10 лет и носители языка, которые делятся аутентичной атмосферой Франции.\n"
+                    "Каждый год мы участвуем во франкофонных фестивалях по всей России — от Москвы и Санкт-Петербурга до Екатеринбурга и Валдая. Мы выступаем на площадках города, организуем любимые французские праздники и завершаем сезон ярким событием, которого ждут все наши ученики.\n"
+                    "Наша цель проста и очень важна: 👉 чтобы дети полюбили французский язык ❤️\n\n"
+                    "🎭 У нас «Конфетти» = это всегда праздник!"
                 )
             ),
             teachers=ContentBlock(
-                text=(
-                    "🇫🇷 Nos enseignants sont passionnés et expérimentés.\n"
-                    "🇷🇺 Наши преподаватели — увлечённые и опытные педагоги.\n\n"
-                    "👩‍🏫 Ksenia Nastytsch\n"
-                    "Enseignante de français avec plus de 20 ans d’expérience.\n"
-                    "Diplômée de l’Université d’État de Perm en philologie (français, anglais, allemand et espagnol).\n"
-                "Titulaire du certificat international DALF, a effectué des stages en France (Grenoble, Pau, Metz).\n\n"
-                "Ксения Настыч\n"
-                "Преподаватель французского языка с опытом работы более 20 лет.\n"
-                "Окончила Пермский государственный университет по специальности «Филология».\n"
-                "Обладатель международного сертификата DALF, проходила стажировки во Франции (Гренобль, По, Мец). Организовывала в течение трёх лет «русские сезоны» в Посольстве России во Франции.\n\n"
-                "👩‍🏫 Анастасия Банникова\n\n"
-                "🇫🇷 Alain Marinot\nLocuteur natif du français avec un accent académique parisien. Acteur et âme de l’école, il parle exclusivement en français — un grand avantage pour les élèves.\n\n"
-                "🇷🇺 Ален Марино\nНоситель французского языка с академическим парижским акцентом. Актёр, душа школы, говорит исключительно по-французски — большая удача для учеников.\n\n"
-                "🇫🇷 Lyudmila Anatolievna Krasnoborova\nEnseignante de français, docteur en philologie, maîtresse de conférences à l’Université d’État de Perm (PGNIU).\n"
-                "Examinateur DALF, prépare aux examens du baccalauréat russe (ЕГЭ) et aux olympiades.\n\n"
-                "🇷🇺 Красноборова Людмила Анатольевна\nПреподаватель французского языка, кандидат филологических наук, доцент ПГНИУ.\n"
-                "Экзаменатор DALF, готовит к ЕГЭ и олимпиадам."
-                )
+                text=("Наши преподаватели — увлечённые и опытные педагоги. Выберите имя ниже, чтобы узнать подробнее.")
             ),
             payment=ContentBlock(
                 text=(
-                    "🇫🇷 Veuillez envoyer une photo ou un reçu de paiement ici.\n"
-                    "🇷🇺 Пожалуйста, отправьте сюда фото или чек об оплате.\n\n"
-                    "📌 Après vérification, nous confirmerons votre inscription.\n"
+                    "Пожалуйста, отправьте сюда фото или чек об оплате.\n\n"
                     "📌 После проверки мы подтвердим вашу запись."
                 )
             ),
             album=ContentBlock(
                 text=(
-                    "🇫🇷 Regardez nos meilleurs moments 🎭\n"
-                    "🇷🇺 Посмотрите наши лучшие моменты 🎭\n\n"
-                    "👉 https://confetti.ru/album"
+                    "Посмотрите наши лучшие моменты 🎭\n\n"
+                    "👉 [Ссылка на альбом]"
                 )
             ),
             contacts=ContentBlock(
                 text=(
-                    "📞 Téléphone : +7 (900) 000-00-00\n"
-                    "📧 Email : confetti@example.com\n"
-                    "🌐 Site / Сайт : https://confetti.ru\n"
-                    "📲 Telegram : @ConfettiAdmin"
+                    "📞 Телефон: +7 (900) 000-00-00\n"
+                    "📧 Email: confetti@example.com\n"
+                    "🌐 Сайт: confetti.ru\n"
+                    "📲 Telegram: @ConfettiAdmin"
                 )
             ),
             vocabulary=[
@@ -525,8 +506,8 @@ class ConfettiTelegramBot:
     CANCELLATION_REASON = 22
 
     MAIN_MENU_BUTTON = "⬅️ Главное меню"
-    REGISTRATION_BUTTON = "📝 Запись / Inscription"
-    CANCELLATION_BUTTON = "❗️ Отменить занятие / Annuler"
+    REGISTRATION_BUTTON = "📝 Запись"
+    CANCELLATION_BUTTON = "❗️ Отменить занятие"
     REGISTRATION_SKIP_PAYMENT_BUTTON = "⏭ Пока без оплаты"
     REGISTRATION_CONFIRM_SAVED_BUTTON = "✅ Продолжить"
     REGISTRATION_EDIT_DETAILS_BUTTON = "✏️ Изменить данные"
@@ -547,52 +528,93 @@ class ConfettiTelegramBot:
     ADMIN_CANCEL_PROMPT = "\n\nЧтобы отменить, напишите «Отмена»."
 
     MAIN_MENU_LAYOUT = (
-        (REGISTRATION_BUTTON, "📅 Расписание / Horaires"),
-        ("ℹ️ О студии / À propos de nous", "👩‍🏫 Преподаватели / Enseignants"),
-        ("📸 Фотоальбом / Album photo", "📞 Контакты / Contact"),
-        ("📚 Полезные слова / Vocabulaire", CANCELLATION_BUTTON),
+        (REGISTRATION_BUTTON, "📅 Расписание"),
+        ("ℹ️ О студии", "👩‍🏫 Преподаватели"),
+        ("📸 Фотоальбом", "📞 Контакты"),
+        ("📚 Полезные слова", CANCELLATION_BUTTON),
     )
 
     TIME_OF_DAY_OPTIONS = (
-        "☀️ Утро / Matin",
-        "🌤 День / Après-midi",
-        "🌙 Вечер / Soir",
+        "☀️ Утро",
+        "🌤 День",
+        "🌙 Вечер",
     )
 
     PROGRAMS = (
         {
-            "label": "📚 français au quotidien / французский каждый день",
+            "label": "📚 Французский каждый день",
             "audience": "С 3 по 11 класс",
-            "teacher": "Преподаватель - Настыч Ксения Викторовна",
-            "schedule": "Дни занятий: вторник или четверг вечер",
+            "teacher": "Преподаватель: Настыч Ксения Викторовна",
+            "schedule": "Дни занятий: вторник или четверг вечером",
         },
         {
-            "label": "🎭 théâtre francophone / театр на французском",
-            "teacher": "Преподаватель - Настыч Ксения Викторовна",
-            "schedule": "Дни занятий: вторник или четверг вечер",
+            "label": "🎭 Театр на французском (вечер)",
+            "teacher": "Преподаватель: Настыч Ксения Викторовна",
+            "schedule": "Дни занятий: вторник или четверг вечером",
         },
         {
-            "label": "📚 français du dimanche / воскресный французский",
-            "audience": "1-4 класс",
-            "teacher": "Преподаватель - Банникова Анастасия Дмитриевна",
+            "label": "📚 Воскресный французский",
+            "audience": "1–4 класс",
+            "teacher": "Преподаватель: Банникова Анастасия Дмитриевна",
             "schedule": "Дни занятий: воскресенье",
         },
         {
-            "label": "🎭 théâtre francophone / театр на французском (воскресенье)",
-            "teacher": "Преподаватель - Банникова Анастасия Дмитриевна",
+            "label": "🎭 Театр на французском (воскресенье)",
+            "teacher": "Преподаватель: Банникова Анастасия Дмитриевна",
             "schedule": "Дни занятий: воскресенье",
         },
         {
-            "label": "🇫🇷 Français au sérieux / Французский по-взрослому",
+            "label": "🇫🇷 Французский по-взрослому",
             "audience": "Группа для взрослых (продолжающие)",
-            "teacher": "Преподаватель - Красноборова Людмила Анатольевна",
+            "teacher": "Преподаватель: Красноборова Людмила Анатольевна",
             "schedule": "Дни занятий: понедельник / четверг / пятница",
         },
         {
-            "label": "👩🏼‍🏫 cours en individuel / Индивидуальные занятия",
+            "label": "👩🏼‍🏫 Индивидуальные занятия",
         },
         {
-            "label": "🍂 Stage d'automne / осенний интенсив",
+            "label": "🍂 Осенний интенсив",
+        },
+    )
+
+    TEACHERS = (
+        {
+            "key": "nastytsch",
+            "name": "Ксения Настыч",
+            "description": (
+                "Преподаватель французского языка с опытом более 20 лет. "
+                "Окончила Пермский государственный университет по специальности "
+                "«Филология» и имеет международный сертификат DALF. "
+                "Регулярно стажировалась во Франции и организовывала «русские сезоны» в Посольстве России."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id фотографии Ксении Настыч
+        },
+        {
+            "key": "bannikova",
+            "name": "Анастасия Банникова",
+            "description": (
+                "Ведёт воскресные программы и театральные занятия. "
+                "Создаёт дружелюбную атмосферу и помогает детям полюбить французский язык через игру и творчество."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id фотографии Анастасии Банниковой
+        },
+        {
+            "key": "marinot",
+            "name": "Ален Марино",
+            "description": (
+                "Носитель французского языка с академическим парижским акцентом. "
+                "Актёр и душа студии, который общается с учениками только по-французски и погружает в живую культуру."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id фотографии Алена Марино
+        },
+        {
+            "key": "krasnoborova",
+            "name": "Людмила Красноборова",
+            "description": (
+                "Кандидат филологических наук, доцент ПГНИУ и экзаменатор DALF. "
+                "Готовит подростков и взрослых к экзаменам и олимпиадам, сочетая академизм и практику."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id фотографии Людмилы Красноборовой
         },
     )
 
@@ -1213,13 +1235,17 @@ class ConfettiTelegramBot:
             ],
             states={
                 self.REGISTRATION_PROGRAM: [
-                    MessageHandler(
-                        filters.Regex(self._programs_regex()),
+                    CallbackQueryHandler(
                         self._registration_collect_program,
+                        pattern=r"^reg_program:\\d+$",
                     ),
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._registration_cancel,
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._registration_prompt_program_buttons,
                     ),
                 ],
                 self.REGISTRATION_CHILD_NAME: [
@@ -1293,7 +1319,7 @@ class ConfettiTelegramBot:
             states={
                 self.CANCELLATION_PROGRAM: [
                     MessageHandler(
-                        filters.Regex(self._programs_regex()),
+                        filters.TEXT & ~filters.COMMAND,
                         self._cancellation_collect_program,
                     ),
                     MessageHandler(
@@ -1320,14 +1346,11 @@ class ConfettiTelegramBot:
         application.add_handler(CommandHandler("admin", self._show_admin_menu))
         application.add_handler(conversation)
         application.add_handler(cancellation)
+        application.add_handler(CallbackQueryHandler(self._teacher_show_profile, pattern=r"^teacher:"))
         application.add_handler(MessageHandler(~filters.COMMAND, self._handle_message))
 
     def _exact_match_regex(self, text: str) -> str:
         return rf"^{re.escape(text)}$"
-
-    def _programs_regex(self) -> str:
-        parts = [re.escape(program["label"]) for program in self.PROGRAMS]
-        return rf"^({'|'.join(parts)})$"
 
     def _time_regex(self) -> str:
         parts = [re.escape(option) for option in self.TIME_OF_DAY_OPTIONS]
@@ -1863,7 +1886,9 @@ class ConfettiTelegramBot:
         update: Update,
         text: Optional[str] = None,
         *,
-        reply_markup: Optional[ReplyKeyboardMarkup | ReplyKeyboardRemove] = None,
+        reply_markup: Optional[
+            ReplyKeyboardMarkup | ReplyKeyboardRemove | InlineKeyboardMarkup
+        ] = None,
         media: Optional[list[MediaAttachment]] = None,
     ) -> None:
         message = update.message
@@ -2034,22 +2059,30 @@ class ConfettiTelegramBot:
         self._remember_chat(update, context)
         await self._purge_expired_registrations(context)
         context.user_data["registration"] = {}
-        message_lines = [
-            "🇫🇷 À quel programme souhaitez-vous inscrire votre enfant ou vous inscrire ?",
-            "🇷🇺 На какую программу вы хотите записать ребёнка или записать себя?",
-        ]
-        details = [self._format_program_details(program) for program in self.PROGRAMS]
+        prompt = (
+            "На какую программу вы хотите записать ребёнка или себя?\n"
+            "Нажмите на кнопку ниже, чтобы выбрать вариант и посмотреть подробности."
+        )
         await self._reply(
             update,
-            "\n".join(message_lines + details),
-            reply_markup=self._program_keyboard(),
+            prompt,
+            reply_markup=self._program_inline_keyboard(),
         )
         return self.REGISTRATION_PROGRAM
 
-    def _program_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [[program["label"]] for program in self.PROGRAMS]
-        keyboard.append([self.MAIN_MENU_BUTTON])
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    def _program_inline_keyboard(self) -> "InlineKeyboardMarkup":
+        buttons = [
+            [InlineKeyboardButton(program["label"], callback_data=f"reg_program:{index}")]
+            for index, program in enumerate(self.PROGRAMS)
+        ]
+        return InlineKeyboardMarkup(buttons)
+
+    def _teacher_inline_keyboard(self) -> "InlineKeyboardMarkup":
+        buttons = [
+            [InlineKeyboardButton(teacher["name"], callback_data=f"teacher:{teacher['key']}")]
+            for teacher in self.TEACHERS
+        ]
+        return InlineKeyboardMarkup(buttons)
 
     def _format_program_details(self, program: Dict[str, str]) -> str:
         parts = [program["label"]]
@@ -2058,8 +2091,49 @@ class ConfettiTelegramBot:
                 parts.append(value)
         return "\n".join(parts)
 
+    async def _registration_prompt_program_buttons(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        await self._reply(
+            update,
+            "Пожалуйста, воспользуйтесь кнопками ниже, чтобы выбрать программу.",
+            reply_markup=self._program_inline_keyboard(),
+        )
+        return self.REGISTRATION_PROGRAM
+
     async def _registration_collect_program(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        program_label = update.message.text
+        query = update.callback_query
+        message = update.message
+
+        program_label = ""
+        if query is not None:
+            data = query.data or ""
+            try:
+                index = int(data.split(":", 1)[1])
+            except (IndexError, ValueError):
+                await query.answer("Не удалось определить программу.", show_alert=True)
+                return self.REGISTRATION_PROGRAM
+            if not 0 <= index < len(self.PROGRAMS):
+                await query.answer("Программа недоступна.", show_alert=True)
+                return self.REGISTRATION_PROGRAM
+            program = self.PROGRAMS[index]
+            program_label = program["label"]
+            try:  # pragma: no cover - depends on telegram runtime
+                await query.edit_message_reply_markup(None)
+            except Exception:
+                pass
+            details = self._format_program_details(program)
+            await self._reply(
+                update,
+                f"Вы выбрали программу:\n{details}",
+            )
+        else:
+            program_label = (message.text if message else "").strip()
+            program = next((item for item in self.PROGRAMS if item["label"] == program_label), None)
+            if not program:
+                await self._registration_prompt_program_buttons(update, context)
+                return self.REGISTRATION_PROGRAM
+
         registration = context.user_data.setdefault("registration", {})
         registration["program"] = program_label
 
@@ -2084,7 +2158,7 @@ class ConfettiTelegramBot:
         if not registration.get("child_name"):
             await self._reply(
                 update,
-                "Merci ! / Спасибо! Напишите, пожалуйста, имя и фамилию ребёнка.",
+                "Отлично! Напишите, пожалуйста, имя и фамилию ребёнка.",
                 reply_markup=ReplyKeyboardRemove(),
             )
             return self.REGISTRATION_CHILD_NAME
@@ -2094,7 +2168,7 @@ class ConfettiTelegramBot:
                 update,
                 (
                     f"Мы сохранили имя: {registration.get('child_name', '—')}.\n"
-                    "🇫🇷 Indiquez la classe, s'il vous plaît.\n🇷🇺 Укажите, пожалуйста, класс."
+                    "Укажите, пожалуйста, класс."
                 ),
                 reply_markup=ReplyKeyboardRemove(),
             )
@@ -2106,8 +2180,7 @@ class ConfettiTelegramBot:
                 (
                     f"Мы сохранили имя и класс: {registration.get('child_name', '—')}"
                     f" ({registration.get('class', '—')}).\n"
-                    "🇫🇷 Écrivez le numéro de téléphone.\n"
-                    "🇷🇺 Введите номер телефона."
+                    "Введите номер телефона вручную."
                 ),
                 reply_markup=self._phone_keyboard(),
             )
@@ -2130,7 +2203,7 @@ class ConfettiTelegramBot:
         context.user_data.setdefault("registration", {})["child_name"] = update.message.text.strip()
         await self._reply(
             update,
-            "🇫🇷 Indiquez la classe, s'il vous plaît.\n🇷🇺 Укажите, пожалуйста, класс.",
+            "Укажите, пожалуйста, класс.",
         )
         return self.REGISTRATION_CLASS
 
@@ -2138,8 +2211,7 @@ class ConfettiTelegramBot:
         context.user_data.setdefault("registration", {})["class"] = update.message.text.strip()
         await self._reply(
             update,
-            "🇫🇷 Écrivez le numéro de téléphone.\n"
-            "🇷🇺 Введите номер телефона вручную.",
+            "Введите номер телефона вручную.",
             reply_markup=self._phone_keyboard(),
         )
         return self.REGISTRATION_PHONE
@@ -2224,7 +2296,7 @@ class ConfettiTelegramBot:
             registration.pop(key, None)
         await self._reply(
             update,
-            "Merci ! / Спасибо! Напишите, пожалуйста, имя и фамилию ребёнка.",
+            "Напишите, пожалуйста, имя и фамилию ребёнка.",
             reply_markup=ReplyKeyboardRemove(),
         )
         return self.REGISTRATION_CHILD_NAME
@@ -2252,8 +2324,7 @@ class ConfettiTelegramBot:
     async def _prompt_time_selection(self, update: Update) -> int:
         await self._reply(
             update,
-            "🇫🇷 Choisissez le moment qui vous convient.\n"
-            "🇷🇺 Выберите удобное время занятий.",
+            "Выберите удобное время занятий.",
             reply_markup=self._time_keyboard(),
         )
         return self.REGISTRATION_TIME
@@ -2273,8 +2344,7 @@ class ConfettiTelegramBot:
     async def _prompt_payment_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         instructions = self._get_content(context).payment
         message = (
-            "💳 🇫🇷 Envoyez une confirmation du paiement (photo, vidéo ou fichier).\n"
-            "💳 🇷🇺 Отправьте подтверждение оплаты (фото, видео или файл).\n\n"
+            "💳 Отправьте подтверждение оплаты (фото, видео или файл).\n\n"
             "➡️ Если оплаты ещё нет, нажмите «⏭ Пока без оплаты» и мы свяжемся с вами позже."
         )
         if instructions.text:
@@ -2316,7 +2386,7 @@ class ConfettiTelegramBot:
         context.user_data.pop("registration", None)
         await self._reply(
             update,
-            "❌ Регистрация отменена.\n❌ L'inscription est annulée.",
+            "❌ Регистрация отменена.",
             reply_markup=self._main_menu_markup_for(update, context),
         )
         return ConversationHandler.END
@@ -2331,10 +2401,7 @@ class ConfettiTelegramBot:
         if not records:
             await self._reply(
                 update,
-                (
-                    "ℹ️ Активных записей не найдено.\n"
-                    "ℹ️ Aucun enregistrement actif n'a été trouvé."
-                ),
+                "ℹ️ Активных записей не найдено.",
                 reply_markup=self._main_menu_markup_for(update, context),
             )
             await self._show_main_menu(update, context)
@@ -2356,8 +2423,7 @@ class ConfettiTelegramBot:
 
         context.user_data["cancellation"] = {"options": options}
         message = (
-            "❗️ 🇷🇺 Выберите занятие, которое хотите отменить.\n"
-            "❗️ 🇫🇷 Choisissez la séance à annuler.\n\n"
+            "❗️ Выберите занятие, которое хотите отменить.\n\n"
             "⚠️ Оплата не возвращается — средства остаются на балансе студии."
         )
         await self._reply(
@@ -2407,8 +2473,7 @@ class ConfettiTelegramBot:
         data["registration_id"] = record.get("id")
         await self._reply(
             update,
-            "📅 Напишите дату и время пропуска, а также короткий комментарий.\n"
-            "📅 Indiquez la date, l'heure et un commentaire, s'il vous plaît.",
+            "📅 Напишите дату и время пропуска, а также короткий комментарий.",
             reply_markup=ReplyKeyboardRemove(),
         )
         return self.CANCELLATION_REASON
@@ -2445,7 +2510,7 @@ class ConfettiTelegramBot:
         context.user_data.pop("cancellation", None)
         await self._reply(
             update,
-            "Отмена занятия не отправлена.\nAnnulation ignorée.",
+            "Отмена занятия не отправлена.",
             reply_markup=self._main_menu_markup_for(update, context),
         )
         return ConversationHandler.END
@@ -2460,24 +2525,19 @@ class ConfettiTelegramBot:
         data = context.user_data.get("registration", {})
         attachments = media or self._dicts_to_attachments(data.get("payment_media"))
         payment_note = data.get("payment_note")
-        payment_status = "✅ Paiement reçu" if attachments else "⏳ Paiement en attente"
-        payment_status_ru = "✅ Оплата подтверждена" if attachments else "⏳ Оплата ожидается"
+        payment_status = "✅ Оплата подтверждена" if attachments else "⏳ Оплата ожидается"
 
         summary = (
-            "🇫🇷 Votre demande a été enregistrée !\n"
-            "🇷🇺 Ваша заявка принята!\n\n"
-            f"👦 Enfant : {data.get('child_name', '—')} ({data.get('class', '—')})\n"
-            f"📱 Téléphone : {data.get('phone', '—')}\n"
-            f"🕒 Heure : {data.get('time', '—')}\n"
-            f"📚 Programme : {data.get('program', '—')}\n"
-            f"💳 {payment_status} | {payment_status_ru}\n"
+            "Ваша заявка принята!\n\n"
+            f"👦 Участник: {data.get('child_name', '—')} ({data.get('class', '—')})\n"
+            f"📱 Телефон: {data.get('phone', '—')}\n"
+            f"🕒 Время: {data.get('time', '—')}\n"
+            f"📚 Программа: {data.get('program', '—')}\n"
+            f"💳 {payment_status}\n"
         )
         if payment_note:
-            summary += f"📝 Remarque : {payment_note}\n"
-        summary += (
-            "\nNous vous contacterons prochainement.\n"
-            "Мы свяжемся с вами в ближайшее время."
-        )
+            summary += f"📝 Комментарий: {payment_note}\n"
+        summary += "\nМы свяжемся с вами в ближайшее время."
 
         await self._reply(update, summary, reply_markup=self._main_menu_markup_for(update, context))
         record = self._store_registration(update, context, data, attachments)
@@ -2620,8 +2680,7 @@ class ConfettiTelegramBot:
         if attachments:
             await self._reply(
                 update,
-                "📌 Пожалуйста, используйте кнопки меню или отправьте текстовое сообщение.\n"
-                "📌 Merci d'utiliser le menu en bas de l'écran.",
+                "📌 Пожалуйста, используйте кнопки меню или отправьте текстовое сообщение.",
                 reply_markup=self._main_menu_markup_for(update, context),
             )
 
@@ -3007,7 +3066,7 @@ class ConfettiTelegramBot:
             if not isinstance(registrations, list) or not registrations:
                 await self._reply(
                     update,
-                    "Заявок пока нет.\nAucune demande enregistrée pour l'instant.",
+                    "Заявок пока нет.",
                     reply_markup=self._admin_menu_markup(),
                 )
                 return False
@@ -3019,7 +3078,7 @@ class ConfettiTelegramBot:
             return False
 
         caption = (
-            "📊 Tableau des inscriptions Confetti\n"
+            "📊 Таблица заявок студии «Конфетти»\n"
             f"Обновлено: {generated_at}\n"
             "Документ включает все заявки и обновляется при каждом экспорте."
         )
@@ -3126,20 +3185,19 @@ class ConfettiTelegramBot:
     async def _handle_menu_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         text = (update.message.text or "").strip()
         handlers = {
-            "📅 Расписание / Horaires": self._send_schedule,
-            "ℹ️ О студии / À propos de nous": self._send_about,
-            "👩‍🏫 Преподаватели / Enseignants": self._send_teachers,
-            "📸 Фотоальбом / Album photo": self._send_album,
-            "📞 Контакты / Contact": self._send_contacts,
-            "📚 Полезные слова / Vocabulaire": self._send_vocabulary,
+            "📅 Расписание": self._send_schedule,
+            "ℹ️ О студии": self._send_about,
+            "👩‍🏫 Преподаватели": self._send_teachers,
+            "📸 Фотоальбом": self._send_album,
+            "📞 Контакты": self._send_contacts,
+            "📚 Полезные слова": self._send_vocabulary,
         }
 
         handler = handlers.get(text)
         if handler is None:
             await self._reply(
                 update,
-                "Пожалуйста, воспользуйтесь меню внизу экрана.\n"
-                "Merci de choisir une option dans le menu ci-dessous.",
+                "Пожалуйста, воспользуйтесь меню внизу экрана.",
                 reply_markup=self._main_menu_markup_for(update, context),
             )
             return
@@ -3157,14 +3215,14 @@ class ConfettiTelegramBot:
         if media:
             await self._reply(
                 update,
-                "📎 Материал доступен во вложениях.\n📎 Contenu disponible en pièce jointe.",
+                "📎 Материал доступен во вложениях.",
                 reply_markup=reply_markup,
                 media=media,
             )
             return
         await self._reply(
             update,
-            "Раздел пока пуст.\nCette section est vide pour le moment.",
+            "Раздел пока пуст.",
             reply_markup=reply_markup,
         )
 
@@ -3178,7 +3236,53 @@ class ConfettiTelegramBot:
 
     async def _send_teachers(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
-        await self._send_content_block(update, context, content.teachers)
+        intro = content.teachers.text.strip() if content.teachers.text else "Наши преподаватели — увлечённые и опытные педагоги."
+        await self._reply(
+            update,
+            intro,
+            reply_markup=self._teacher_inline_keyboard(),
+        )
+
+    async def _teacher_show_profile(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+        data = (query.data or "").split(":", 1)
+        if len(data) != 2:
+            await query.answer("Не удалось открыть профиль.", show_alert=True)
+            return
+        key = data[1]
+        teacher = next((item for item in self.TEACHERS if item["key"] == key), None)
+        if teacher is None:
+            await query.answer("Педагог не найден.", show_alert=True)
+            return
+
+        caption = f"{teacher['name']}\n\n{teacher['description']}"
+        photo_id = teacher.get("photo_file_id")
+
+        if photo_id:
+            try:
+                await query.answer()
+                await query.message.reply_photo(
+                    photo_id,
+                    caption=caption,
+                    reply_markup=self._teacher_inline_keyboard(),
+                )
+            except Exception as exc:  # pragma: no cover - depends on Telegram runtime
+                LOGGER.warning("Failed to send teacher photo: %s", exc)
+                await self._reply(
+                    update,
+                    caption + "\n\n📸 Добавьте корректный file_id в TEACHERS, чтобы показывать фото.",
+                    reply_markup=self._teacher_inline_keyboard(),
+                )
+        else:
+            await self._reply(
+                update,
+                caption + "\n\n📸 Добавьте file_id в TEACHERS, чтобы показать фотографию.",
+                reply_markup=self._teacher_inline_keyboard(),
+            )
 
     async def _send_album(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
