@@ -3658,18 +3658,13 @@ class ConfettiTelegramBot:
         if photo_source:
             await self._reply(
                 update,
-                caption + "\n\n📸 Фото преподавателя отправлено отдельным сообщением.",
-                reply_markup=keyboard,
-                prefer_edit=True,
-            )
-            await self._reply(
-                update,
                 text=None,
+                reply_markup=keyboard,
                 media=[
                     MediaAttachment(
                         kind="photo",
                         file_id=photo_source,
-                        caption=teacher["name"],
+                        caption=caption,
                     )
                 ],
             )
@@ -3717,29 +3712,26 @@ class ConfettiTelegramBot:
         photo_source = program.get("photo_url") or program.get("photo_file_id")
         # ``photo_url`` expects a direct HTTP(S) link. ``photo_file_id`` is kept for legacy configs.
         if photo_source:
-            text = overview + "\n\n📸 Фото направления отправлено отдельным сообщением."
-        else:
-            text = overview + "\n\n"
-
-        await self._reply(
-            update,
-            text,
-            reply_markup=self._about_inline_keyboard(),
-            prefer_edit=True,
-        )
-
-        if photo_source:
             await self._reply(
                 update,
                 text=None,
+                reply_markup=self._about_inline_keyboard(),
                 media=[
                     MediaAttachment(
                         kind="photo",
                         file_id=photo_source,
-                        caption=program.get("label", "Направление"),
+                        caption=overview,
                     )
                 ],
             )
+            return
+
+        await self._reply(
+            update,
+            overview + "\n\n",
+            reply_markup=self._about_inline_keyboard(),
+            prefer_edit=True,
+        )
 
     async def _send_album(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
