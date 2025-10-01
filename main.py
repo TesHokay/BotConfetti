@@ -572,7 +572,7 @@ class ConfettiTelegramBot:
                 "в язык через общение, игры и проекты, закрепляя школьную программу "
                 "и расширяя словарный запас."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?auto=format&fit=crop&w=1200&q=80",
+            "photo_file_id": "AgACAgIAAxkBAAECDM5o3YPwhxLEXvjGrdhRv-I-_9vjfwACq_8xG3Ro6Er-VzCddEI54QEAAwIAA3kAAzYE",
         },
         {
             "label": "🎭 Театр на французском (вечер)",
@@ -583,7 +583,7 @@ class ConfettiTelegramBot:
                 "Готовим постановки, работаем над произношением и учимся импровизировать "
                 "на французском."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1200&q=80",
+            "photo_file_id": None,
         },
         {
             "label": "📚 Воскресный французский",
@@ -594,7 +594,7 @@ class ConfettiTelegramBot:
                 "Уютные воскресные встречи для младших школьников. Развиваем речь "
                 "через творчество, песни и игры, знакомимся с французскими традициями."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=1200&q=80",
+            "photo_file_id": None,
         },
         {
             "label": "🎭 Театр на французском (воскресенье)",
@@ -604,7 +604,7 @@ class ConfettiTelegramBot:
                 "Театральная студия выходного дня: работа с текстами, пластикой и "
                 "эмоциями на французском языке, совместные выступления и фестивали."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1530023367847-a683933f4177?auto=format&fit=crop&w=1200&q=80",
+            "photo_file_id": None,
         },
         {
             "label": "🇫🇷 Французский по-взрослому",
@@ -615,7 +615,7 @@ class ConfettiTelegramBot:
                 "Курс для тех, кто уже влюблён во французский. Углубляем грамматику, "
                 "отрабатываем разговорные ситуации и готовимся к международным экзаменам."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1471109880861-75c76e51c31c?auto=format&fit=crop&w=1200&q=80",
+            "photo_file_id": None,
         },
         {
             "label": "🇰🇷 Корейский язык с Ксенией Вшивковой",
@@ -627,7 +627,7 @@ class ConfettiTelegramBot:
                 "и культуру K-pop. Подходит тем, кто мечтает понимать песни, "
                 "сериалы и общаться с носителями."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
+            "photo_file_id": None,
         },
         {
             "label": "👩🏼‍🏫 Индивидуальные занятия",
@@ -639,7 +639,7 @@ class ConfettiTelegramBot:
                 "разговорная практика или помощь по школе. Ксения Вшивкова ведёт "
                 "индивидуальные занятия по французскому, английскому и корейскому языкам."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80",  # TODO: замените на ссылку для вашего изображения
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Индивидуальные занятия»
         },
         {
             "label": "🍂 Осенний интенсив",
@@ -649,7 +649,7 @@ class ConfettiTelegramBot:
                 "Погружение в язык на время каникул: тематические мастер-классы, "
                 "театральные проекты и квесты на французском."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80",  # TODO: замените на ссылку для вашего изображения
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Осенний интенсив»
         },
     )
 
@@ -663,7 +663,7 @@ class ConfettiTelegramBot:
                 "«Филология» и имеет международный сертификат DALF. "
                 "Регулярно стажировалась во Франции и организовывала «русские сезоны» в Посольстве России."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1525134479668-1bee5c7c6845?auto=format&fit=crop&w=1200&q=80",  # TODO: замените на ссылку для вашей фотографии
+            "photo_file_id": None,  # TODO: добавьте file_id фотографии Ксении Настыч
         },
         {
             "key": "bannikova",
@@ -672,7 +672,7 @@ class ConfettiTelegramBot:
                 "Ведёт воскресные программы и театральные занятия. "
                 "Создаёт дружелюбную атмосферу и помогает детям полюбить французский язык через игру и творчество."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=1200&q=80",  # TODO: замените на ссылку для вашей фотографии
+            "photo_file_id": None,  # TODO: добавьте file_id фотографии Анастасии Банниковой
         },
         {
             "key": "marinot",
@@ -681,7 +681,7 @@ class ConfettiTelegramBot:
                 "Носитель французского языка с академическим парижским акцентом. "
                 "Актёр и душа студии, который общается с учениками только по-французски и погружает в живую культуру."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=1200&q=80",  # TODO: замените на ссылку для вашей фотографии
+            "photo_file_id": None,  # TODO: добавьте file_id фотографии Алена Марино
         },
         {
             "key": "krasnoborova",
@@ -690,7 +690,7 @@ class ConfettiTelegramBot:
                 "Кандидат филологических наук, доцент ПГНИУ и экзаменатор DALF. "
                 "Готовит подростков и взрослых к экзаменам и олимпиадам, сочетая академизм и практику."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1517430816045-df4b7de11d1d?auto=format&fit=crop&w=1200&q=80",  # TODO: замените на ссылку для вашей фотографии
+            "photo_file_id": None,  # TODO: добавьте file_id фотографии Людмилы Красноборовой
         },
         {
             "key": "vshivkova",
@@ -701,7 +701,7 @@ class ConfettiTelegramBot:
                 "Работает с детьми более четырёх лет. Ведёт групповые занятия по французскому и корейскому, "
                 "а также индивидуальные уроки по французскому, английскому и корейскому языкам."
             ),
-            "photo_url": "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=1200&q=80",  # TODO: замените на ссылку для вашей фотографии
+            "photo_file_id": None,  # TODO: добавьте file_id фотографии Ксении Вшивковой
         },
     )
 
@@ -3714,9 +3714,9 @@ class ConfettiTelegramBot:
         else:
             fallback_photo = next(
                 (
-                    program.get("photo_url") or program.get("photo_file_id")
+                    program.get("photo_file_id")
                     for program in self.PROGRAMS
-                    if program.get("photo_url") or program.get("photo_file_id")
+                    if program.get("photo_file_id")
                 ),
                 None,
             )
@@ -3805,9 +3805,9 @@ class ConfettiTelegramBot:
         else:
             fallback_photo = next(
                 (
-                    teacher.get("photo_url") or teacher.get("photo_file_id")
+                    teacher.get("photo_file_id")
                     for teacher in self.TEACHERS
-                    if teacher.get("photo_url") or teacher.get("photo_file_id")
+                    if teacher.get("photo_file_id")
                 ),
                 None,
             )
@@ -3855,10 +3855,9 @@ class ConfettiTelegramBot:
         await query.answer()
         caption = f"{teacher['name']}\n\n{teacher['description']}"
         keyboard = self._teacher_inline_keyboard()
-        photo_source = teacher.get("photo_url") or teacher.get("photo_file_id")
-        # ``photo_url`` expects a direct HTTP(S) link. ``photo_file_id`` is kept for legacy configs.
+        photo_id = teacher.get("photo_file_id")
 
-        if photo_source:
+        if photo_id:
             await self._reply(
                 update,
                 text=None,
@@ -3866,10 +3865,11 @@ class ConfettiTelegramBot:
                 media=[
                     MediaAttachment(
                         kind="photo",
-                        file_id=photo_source,
+                        file_id=photo_id,
                         caption=caption,
                     )
                 ],
+                prefer_edit=update.callback_query is not None,
             )
             return
 
@@ -3912,9 +3912,8 @@ class ConfettiTelegramBot:
         await query.answer()
 
         overview = self._format_program_details(program)
-        photo_source = program.get("photo_url") or program.get("photo_file_id")
-        # ``photo_url`` expects a direct HTTP(S) link. ``photo_file_id`` is kept for legacy configs.
-        if photo_source:
+        photo_id = program.get("photo_file_id")
+        if photo_id:
             await self._reply(
                 update,
                 text=None,
@@ -3922,10 +3921,11 @@ class ConfettiTelegramBot:
                 media=[
                     MediaAttachment(
                         kind="photo",
-                        file_id=photo_source,
+                        file_id=photo_id,
                         caption=overview,
                     )
                 ],
+                prefer_edit=update.callback_query is not None,
             )
             return
 
