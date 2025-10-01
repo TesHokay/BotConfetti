@@ -555,34 +555,89 @@ class ConfettiTelegramBot:
             "audience": "С 3 по 11 класс",
             "teacher": "Преподаватель: Настыч Ксения Викторовна",
             "schedule": "Дни занятий: вторник или четверг вечером",
+            "description": (
+                "Интенсивная языковая практика в будни. Ученики погружаются "
+                "в язык через общение, игры и проекты, закрепляя школьную программу "
+                "и расширяя словарный запас."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Французский каждый день»
         },
         {
             "label": "🎭 Театр на французском (вечер)",
             "teacher": "Преподаватель: Настыч Ксения Викторовна",
             "schedule": "Дни занятий: вторник или четверг вечером",
+            "description": (
+                "Театральная студия для тех, кто любит сцену и французский язык. "
+                "Готовим постановки, работаем над произношением и учимся импровизировать "
+                "на французском."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Театр на французском (вечер)»
         },
         {
             "label": "📚 Воскресный французский",
             "audience": "1–4 класс",
             "teacher": "Преподаватель: Банникова Анастасия Дмитриевна",
             "schedule": "Дни занятий: воскресенье",
+            "description": (
+                "Уютные воскресные встречи для младших школьников. Развиваем речь "
+                "через творчество, песни и игры, знакомимся с французскими традициями."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Воскресный французский»
         },
         {
             "label": "🎭 Театр на французском (воскресенье)",
             "teacher": "Преподаватель: Банникова Анастасия Дмитриевна",
             "schedule": "Дни занятий: воскресенье",
+            "description": (
+                "Театральная студия выходного дня: работа с текстами, пластикой и "
+                "эмоциями на французском языке, совместные выступления и фестивали."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Театр на французском (воскресенье)»
         },
         {
             "label": "🇫🇷 Французский по-взрослому",
             "audience": "Группа для взрослых (продолжающие)",
             "teacher": "Преподаватель: Красноборова Людмила Анатольевна",
             "schedule": "Дни занятий: понедельник / четверг / пятница",
+            "description": (
+                "Курс для тех, кто уже влюблён во французский. Углубляем грамматику, "
+                "отрабатываем разговорные ситуации и готовимся к международным экзаменам."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Французский по-взрослому»
+        },
+        {
+            "label": "🇰🇷 Корейский язык с Ксенией Вшивковой",
+            "audience": "Групповые занятия для подростков и взрослых",
+            "teacher": "Преподаватель: Ксения Вшивкова",
+            "schedule": "График уточняется при формировании группы",
+            "description": (
+                "Современный курс корейского языка с акцентом на живое общение "
+                "и культуру K-pop. Подходит тем, кто мечтает понимать песни, "
+                "сериалы и общаться с носителями."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Корейский язык»
         },
         {
             "label": "👩🏼‍🏫 Индивидуальные занятия",
+            "audience": "Французский, английский и корейский языки",
+            "teacher": "Преподаватели: команда студии и Ксения Вшивкова",
+            "schedule": "График подбирается персонально",
+            "description": (
+                "Персональные уроки под ваши цели: подготовка к экзаменам, "
+                "разговорная практика или помощь по школе. Ксения Вшивкова ведёт "
+                "индивидуальные занятия по французскому, английскому и корейскому языкам."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Индивидуальные занятия»
         },
         {
             "label": "🍂 Осенний интенсив",
+            "audience": "Краткосрочная программа",
+            "schedule": "Сезонные смены, даты объявляются дополнительно",
+            "description": (
+                "Погружение в язык на время каникул: тематические мастер-классы, "
+                "театральные проекты и квесты на французском."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Осенний интенсив»
         },
     )
 
@@ -624,6 +679,17 @@ class ConfettiTelegramBot:
                 "Готовит подростков и взрослых к экзаменам и олимпиадам, сочетая академизм и практику."
             ),
             "photo_file_id": None,  # TODO: добавьте file_id фотографии Людмилы Красноборовой
+        },
+        {
+            "key": "vshivkova",
+            "name": "Ксения Вшивкова",
+            "description": (
+                "Владеет французским, английским и корейским языками. Студентка ПГНИУ (2021–2026), "
+                "факультет современного иностранных языков и литератур по направлению «Перевод и переводоведение». "
+                "Работает с детьми более четырёх лет. Ведёт групповые занятия по французскому и корейскому, "
+                "а также индивидуальные уроки по французскому, английскому и корейскому языкам."
+            ),
+            "photo_file_id": None,  # TODO: добавьте file_id фотографии Ксении Вшивковой
         },
     )
 
@@ -1393,6 +1459,7 @@ class ConfettiTelegramBot:
         application.add_handler(CommandHandler("admin", self._show_admin_menu))
         application.add_handler(conversation)
         application.add_handler(cancellation)
+        application.add_handler(CallbackQueryHandler(self._about_show_direction, pattern=r"^about:"))
         application.add_handler(CallbackQueryHandler(self._teacher_show_profile, pattern=r"^teacher:"))
         application.add_handler(MessageHandler(~filters.COMMAND, self._handle_message))
 
@@ -2152,19 +2219,33 @@ class ConfettiTelegramBot:
         buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_back:menu")])
         return InlineKeyboardMarkup(buttons)
 
+    def _about_inline_keyboard(self) -> "InlineKeyboardMarkup":
+        buttons = [
+            [InlineKeyboardButton(program["label"], callback_data=f"about:{index}")]
+            for index, program in enumerate(self.PROGRAMS)
+        ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="about:home")])
+        return InlineKeyboardMarkup(buttons)
+
     def _teacher_inline_keyboard(self) -> "InlineKeyboardMarkup":
         buttons = [
             [InlineKeyboardButton(teacher["name"], callback_data=f"teacher:{teacher['key']}")]
             for teacher in self.TEACHERS
         ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="teacher:home")])
         return InlineKeyboardMarkup(buttons)
 
     def _format_program_details(self, program: Dict[str, str]) -> str:
-        parts = [program["label"]]
+        lines = [program["label"]]
+        description = program.get("description")
+        if description:
+            lines.append("")
+            lines.append(description)
         for key in ("audience", "teacher", "schedule"):
-            if value := program.get(key):
-                parts.append(value)
-        return "\n".join(parts)
+            value = program.get(key)
+            if value:
+                lines.append(value)
+        return "\n".join(line for line in lines if line is not None)
 
     async def _registration_prompt_program_buttons(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -3476,7 +3557,14 @@ class ConfettiTelegramBot:
 
     async def _send_about(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
-        await self._send_content_block(update, context, content.about)
+        intro = content.about.text.strip() if content.about.text else "О студии"
+        message = intro + "\n\nВыберите направление, чтобы узнать подробности."
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._about_inline_keyboard(),
+            prefer_edit=update.callback_query is not None,
+        )
 
     async def _send_registration_list(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -3538,6 +3626,7 @@ class ConfettiTelegramBot:
             update,
             intro,
             reply_markup=self._teacher_inline_keyboard(),
+            prefer_edit=update.callback_query is not None,
         )
 
     async def _teacher_show_profile(
@@ -3551,36 +3640,98 @@ class ConfettiTelegramBot:
             await query.answer("Не удалось открыть профиль.", show_alert=True)
             return
         key = data[1]
+        if key == "home":
+            await query.answer()
+            await self._send_teachers(update, context)
+            return
+
         teacher = next((item for item in self.TEACHERS if item["key"] == key), None)
         if teacher is None:
             await query.answer("Педагог не найден.", show_alert=True)
             return
 
+        await query.answer()
         caption = f"{teacher['name']}\n\n{teacher['description']}"
+        keyboard = self._teacher_inline_keyboard()
         photo_id = teacher.get("photo_file_id")
 
         if photo_id:
-            try:
-                await query.answer()
-                await query.message.reply_photo(
-                    photo_id,
-                    caption=caption,
-                    reply_markup=self._teacher_inline_keyboard(),
-                )
-            except Exception as exc:  # pragma: no cover - depends on Telegram runtime
-                LOGGER.warning("Failed to send teacher photo: %s", exc)
-                await self._reply(
-                    update,
-                    caption + "\n\n📸 Добавьте корректный file_id в TEACHERS, чтобы показывать фото.",
-                    reply_markup=self._teacher_inline_keyboard(),
-                    prefer_edit=True,
-                )
-        else:
             await self._reply(
                 update,
-                caption + "\n\n📸 Добавьте file_id в TEACHERS, чтобы показать фотографию.",
-                reply_markup=self._teacher_inline_keyboard(),
+                caption + "\n\n📸 Фото преподавателя отправлено отдельным сообщением.",
+                reply_markup=keyboard,
                 prefer_edit=True,
+            )
+            await self._reply(
+                update,
+                text=None,
+                media=[MediaAttachment(kind="photo", file_id=photo_id, caption=teacher["name"])],
+            )
+            return
+
+        await self._reply(
+            update,
+            caption + "\n\n📸 Добавьте file_id в TEACHERS, чтобы показать фотографию.",
+            reply_markup=keyboard,
+            prefer_edit=True,
+        )
+
+    async def _about_show_direction(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+
+        data = (query.data or "").split(":", 1)
+        if len(data) != 2:
+            await query.answer("Не удалось показать направление.", show_alert=True)
+            return
+
+        key = data[1]
+        if key == "home":
+            await query.answer()
+            await self._send_about(update, context)
+            return
+
+        try:
+            index = int(key)
+        except ValueError:
+            await query.answer("Неизвестное направление.", show_alert=True)
+            return
+
+        if not 0 <= index < len(self.PROGRAMS):
+            await query.answer("Направление не найдено.", show_alert=True)
+            return
+
+        program = self.PROGRAMS[index]
+        await query.answer()
+
+        overview = self._format_program_details(program)
+        photo_id = program.get("photo_file_id")
+        if photo_id:
+            text = overview + "\n\n📸 Фото направления отправлено отдельным сообщением."
+        else:
+            text = overview + "\n\n📸 Добавьте file_id изображения направления, чтобы показать фото."
+
+        await self._reply(
+            update,
+            text,
+            reply_markup=self._about_inline_keyboard(),
+            prefer_edit=True,
+        )
+
+        if photo_id:
+            await self._reply(
+                update,
+                text=None,
+                media=[
+                    MediaAttachment(
+                        kind="photo",
+                        file_id=photo_id,
+                        caption=program.get("label", "Направление"),
+                    )
+                ],
             )
 
     async def _send_album(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
