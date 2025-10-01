@@ -526,7 +526,7 @@ class ConfettiTelegramBot:
     ADMIN_EDIT_CONTACTS_BUTTON = "📞 Редактировать контакты"
     ADMIN_EDIT_VOCABULARY_BUTTON = "📚 Редактировать словарь"
     ADMIN_CANCEL_KEYWORDS = ("отмена", "annuler", "cancel")
-    ADMIN_CANCEL_PROMPT = "\n\nЧтобы отменить, напишите «Отмена»."
+    ADMIN_CANCEL_PROMPT = f"\n\nЧтобы отменить, нажмите «{BACK_BUTTON}» или напишите «Отмена»."
 
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание"),
@@ -1929,7 +1929,10 @@ class ConfettiTelegramBot:
         target = message or (callback.message if callback else None)
 
         if callback:
-            await callback.answer()
+            try:
+                await callback.answer()
+            except Exception as exc:  # pragma: no cover - network/runtime specific
+                LOGGER.debug("Unable to answer callback query: %s", exc)
 
         markup_used = False
 
@@ -2363,6 +2366,13 @@ class ConfettiTelegramBot:
     def _phone_keyboard(self) -> ReplyKeyboardMarkup:
         return self._back_keyboard()
 
+    def _admin_action_keyboard(self) -> ReplyKeyboardMarkup:
+        keyboard = [
+            [KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.ADMIN_MENU_BUTTON)],
+            [KeyboardButton(self.MAIN_MENU_BUTTON)],
+        ]
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
     def _saved_details_keyboard(self) -> ReplyKeyboardMarkup:
         keyboard = [
             [KeyboardButton(self.REGISTRATION_CONFIRM_SAVED_BUTTON)],
@@ -2748,6 +2758,7 @@ class ConfettiTelegramBot:
         text, attachments = self._extract_message_payload(message)
 
         if text == self.MAIN_MENU_BUTTON:
+            context.chat_data.pop("pending_admin_action", None)
             await self._show_main_menu(update, context)
             return
 
@@ -2755,7 +2766,10 @@ class ConfettiTelegramBot:
         pending = context.chat_data.get("pending_admin_action")
 
         if pending and profile.is_admin:
-            if text and text.strip().lower() in self._admin_cancel_tokens:
+            trimmed = text.strip() if text else ""
+            lowered = trimmed.lower()
+
+            if trimmed == self.BACK_BUTTON or lowered in self._admin_cancel_tokens:
                 context.chat_data.pop("pending_admin_action", None)
                 await self._reply(
                     update,
@@ -2763,6 +2777,17 @@ class ConfettiTelegramBot:
                     reply_markup=self._admin_menu_markup(),
                 )
                 return
+
+            if trimmed == self.ADMIN_MENU_BUTTON:
+                context.chat_data.pop("pending_admin_action", None)
+                await self._show_admin_menu(update, context)
+                return
+
+            if trimmed == self.ADMIN_BACK_TO_USER_BUTTON:
+                context.chat_data.pop("pending_admin_action", None)
+                await self._show_main_menu(update, context)
+                return
+
             context.chat_data.pop("pending_admin_action", None)
             await self._dispatch_admin_action(
                 update,
@@ -2787,7 +2812,7 @@ class ConfettiTelegramBot:
                     update,
                     "Отправьте сообщение или медиа для рассылки."
                     + self.ADMIN_CANCEL_PROMPT,
-                    reply_markup=ReplyKeyboardRemove(),
+                    reply_markup=self._admin_action_keyboard(),
                 )
                 return
             if command_text == self.ADMIN_EXPORT_TABLE_BUTTON:
@@ -2799,7 +2824,7 @@ class ConfettiTelegramBot:
                     update,
                     "Введите chat_id нового администратора.\n"
                     + self.ADMIN_CANCEL_PROMPT,
-                    reply_markup=ReplyKeyboardRemove(),
+                    reply_markup=self._admin_action_keyboard(),
                 )
                 return
             if command_text == self.ADMIN_EDIT_SCHEDULE_BUTTON:
@@ -2916,7 +2941,7 @@ class ConfettiTelegramBot:
                 update,
                 "Пожалуйста, отправьте числовой chat_id администратора."
                 + self.ADMIN_CANCEL_PROMPT,
-                reply_markup=ReplyKeyboardRemove(),
+                reply_markup=self._admin_action_keyboard(),
             )
             context.chat_data["pending_admin_action"] = {"type": "add_admin"}
             return
@@ -2971,7 +2996,7 @@ class ConfettiTelegramBot:
             "Текущий текст:"
             f"\n{text_preview}\n{media_note}"
         )
-        await self._reply(update, message, reply_markup=ReplyKeyboardRemove())
+        await self._reply(update, message, reply_markup=self._admin_action_keyboard())
 
     async def _prompt_admin_vocabulary_edit(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -2997,7 +3022,11 @@ class ConfettiTelegramBot:
             "\nКаждое слово — на отдельной строке."
             f"\n\nТекущий список:\n{sample}"
         )
-        await self._reply(update, message + self.ADMIN_CANCEL_PROMPT, reply_markup=ReplyKeyboardRemove())
+        await self._reply(
+            update,
+            message + self.ADMIN_CANCEL_PROMPT,
+            reply_markup=self._admin_action_keyboard(),
+        )
 
     async def _admin_send_broadcast(
         self,
@@ -3324,7 +3353,7 @@ class ConfettiTelegramBot:
                 update,
                 "Отправьте хотя бы одну строку с данными."
                 + self.ADMIN_CANCEL_PROMPT,
-                reply_markup=ReplyKeyboardRemove(),
+                reply_markup=self._admin_action_keyboard(),
             )
             return False
 
@@ -3336,7 +3365,7 @@ class ConfettiTelegramBot:
                     update,
                     "Неверный формат. Используйте 5 частей через вертикальную черту."
                     + self.ADMIN_CANCEL_PROMPT,
-                    reply_markup=ReplyKeyboardRemove(),
+                    reply_markup=self._admin_action_keyboard(),
                 )
                 return False
             entries.append(
