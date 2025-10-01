@@ -514,6 +514,7 @@ class ConfettiTelegramBot:
     REGISTRATION_KEEP_TIME_BUTTON = "🔁 То же время"
     REGISTRATION_NEW_TIME_BUTTON = "⏰ Другое время"
     BACK_BUTTON = "◀️ Назад"
+    REGISTRATION_LIST_BUTTON = "📋 Список записей"
     ADMIN_MENU_BUTTON = "🛠 Админ-панель"
     ADMIN_BACK_TO_USER_BUTTON = "⬅️ Пользовательское меню"
     ADMIN_BROADCAST_BUTTON = "📣 Рассылка"
@@ -531,7 +532,7 @@ class ConfettiTelegramBot:
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание"),
         ("ℹ️ О студии", "👩‍🏫 Преподаватели"),
-        ("📸 Фотоальбом", "📞 Контакты"),
+        (REGISTRATION_LIST_BUTTON, "📞 Контакты"),
         ("📚 Полезные слова", CANCELLATION_BUTTON),
     )
 
@@ -1923,6 +1924,7 @@ class ConfettiTelegramBot:
             ReplyKeyboardMarkup | ReplyKeyboardRemove | InlineKeyboardMarkup
         ] = None,
         media: Optional[list[MediaAttachment]] = None,
+        prefer_edit: bool = False,
     ) -> None:
         message = update.message
         callback = update.callback_query
@@ -1935,6 +1937,26 @@ class ConfettiTelegramBot:
                 LOGGER.debug("Unable to answer callback query: %s", exc)
 
         markup_used = False
+        inline_markup = reply_markup if reply_markup and hasattr(reply_markup, "inline_keyboard") else None
+
+        if (
+            prefer_edit
+            and callback
+            and callback.message is not None
+            and (inline_markup is not None or reply_markup is None)
+        ):
+            try:
+                if text is not None:
+                    await callback.message.edit_text(text, reply_markup=inline_markup)
+                    markup_used = inline_markup is not None
+                    text = None
+                elif inline_markup is not None:
+                    await callback.message.edit_reply_markup(inline_markup)
+                    markup_used = True
+            except Exception as exc:  # pragma: no cover - Telegram runtime dependent
+                LOGGER.debug("Failed to edit callback message: %s", exc)
+            else:
+                target = callback.message
 
         if text:
             if target is not None:
@@ -2105,6 +2127,7 @@ class ConfettiTelegramBot:
             update,
             self._registration_program_prompt(),
             reply_markup=self._program_inline_keyboard(),
+            prefer_edit=update.callback_query is not None,
         )
         return self.REGISTRATION_PROGRAM
 
@@ -2137,6 +2160,7 @@ class ConfettiTelegramBot:
             update,
             self._registration_program_prompt(),
             reply_markup=self._program_inline_keyboard(),
+            prefer_edit=update.callback_query is not None,
         )
         return self.REGISTRATION_PROGRAM
 
@@ -3395,7 +3419,7 @@ class ConfettiTelegramBot:
             "📅 Расписание": self._send_schedule,
             "ℹ️ О студии": self._send_about,
             "👩‍🏫 Преподаватели": self._send_teachers,
-            "📸 Фотоальбом": self._send_album,
+            self.REGISTRATION_LIST_BUTTON: self._send_registration_list,
             "📞 Контакты": self._send_contacts,
             "📚 Полезные слова": self._send_vocabulary,
         }
@@ -3441,6 +3465,59 @@ class ConfettiTelegramBot:
         content = self._get_content(context)
         await self._send_content_block(update, context, content.about)
 
+    async def _send_registration_list(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        await self._purge_expired_registrations(context)
+        records = self._collect_user_registrations(update.effective_user, update.effective_chat)
+        reply_markup = self._main_menu_markup_for(update, context)
+        if not records:
+            await self._reply(
+                update,
+                "📋 У вас пока нет активных заявок.",
+                reply_markup=reply_markup,
+            )
+            return
+
+        sorted_records = sorted(
+            records,
+            key=lambda item: self._parse_record_timestamp(item.get("created_at")) or datetime.min,
+            reverse=True,
+        )
+
+        lines: list[str] = []
+        for index, record in enumerate(sorted_records, start=1):
+            program = str(record.get("program", "")) or "Без программы"
+            child = str(record.get("child_name", ""))
+            grade = str(record.get("class", ""))
+            time_slot = str(record.get("time", ""))
+            created_at = str(record.get("created_at", ""))
+            payment_note = str(record.get("payment_note", ""))
+            payment_media = record.get("payment_media") or []
+
+            entry_lines = [f"{index}. {program}"]
+            details: list[str] = []
+            if child:
+                details.append(child)
+            if grade:
+                details.append(f"класс: {grade}")
+            if time_slot:
+                details.append(f"время: {time_slot}")
+            if details:
+                entry_lines.append(" • ".join(details))
+            if created_at:
+                entry_lines.append(f"📅 Заявка от: {created_at}")
+            if payment_media:
+                entry_lines.append("💳 Оплата: подтверждение во вложении")
+            elif payment_note:
+                entry_lines.append(f"💳 Оплата: {payment_note}")
+            else:
+                entry_lines.append("💳 Оплата: ожидается")
+            lines.append("\n".join(entry_lines))
+
+        text = "📋 Ваши заявки:\n\n" + "\n\n".join(lines)
+        await self._reply(update, text, reply_markup=reply_markup)
+
     async def _send_teachers(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
         intro = content.teachers.text.strip() if content.teachers.text else "Наши преподаватели — увлечённые и опытные педагоги."
@@ -3483,12 +3560,14 @@ class ConfettiTelegramBot:
                     update,
                     caption + "\n\n📸 Добавьте корректный file_id в TEACHERS, чтобы показывать фото.",
                     reply_markup=self._teacher_inline_keyboard(),
+                    prefer_edit=True,
                 )
         else:
             await self._reply(
                 update,
                 caption + "\n\n📸 Добавьте file_id в TEACHERS, чтобы показать фотографию.",
                 reply_markup=self._teacher_inline_keyboard(),
+                prefer_edit=True,
             )
 
     async def _send_album(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
