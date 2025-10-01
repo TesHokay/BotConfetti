@@ -509,6 +509,9 @@ class ConfettiTelegramBot:
     content_template: BotContent = field(default_factory=BotContent.default)
     storage_path: Optional[Path] = None
 
+    CAPTION_LIMIT = 1024
+    MESSAGE_LIMIT = 4096
+
     REGISTRATION_PROGRAM = 1
     REGISTRATION_CHILD_NAME = 2
     REGISTRATION_CLASS = 3
@@ -2017,6 +2020,71 @@ class ConfettiTelegramBot:
             return None
         return None
 
+    def _split_once_for_limit(self, text: str, limit: int) -> tuple[str, str]:
+        """Return the first chunk within ``limit`` and the remaining text."""
+
+        trimmed = text.strip()
+        if not trimmed:
+            return "", ""
+
+        if len(trimmed) <= limit:
+            return trimmed, ""
+
+        split_at = trimmed.rfind("\n\n", 0, limit + 1)
+        if split_at == -1:
+            split_at = trimmed.rfind("\n", 0, limit + 1)
+        if split_at == -1:
+            split_at = trimmed.rfind(" ", 0, limit + 1)
+        if split_at == -1 or split_at <= 0 or split_at < int(limit * 0.5):
+            split_at = limit
+
+        head = trimmed[:split_at].rstrip()
+        if not head:
+            head = trimmed[:limit]
+            split_at = len(head)
+
+        remainder = trimmed[split_at:].lstrip()
+        return head, remainder
+
+    def _split_text_for_limit(self, text: str, limit: int) -> list[str]:
+        """Split ``text`` into chunks no longer than ``limit`` characters."""
+
+        chunks: list[str] = []
+        remaining = text.strip()
+        while remaining:
+            head, tail = self._split_once_for_limit(remaining, limit)
+            if not head:
+                break
+            chunks.append(head)
+            remaining = tail
+        return chunks
+
+    def _prepare_media_caption(self, attachment: MediaAttachment) -> list[str]:
+        """Ensure media caption respects Telegram limits and return overflow text."""
+
+        caption = (attachment.caption or "").strip()
+        if not caption:
+            attachment.caption = None
+            return []
+
+        if len(caption) <= self.CAPTION_LIMIT:
+            attachment.caption = caption
+            return []
+
+        head, overflow = self._split_once_for_limit(caption, self.CAPTION_LIMIT)
+        attachment.caption = head
+        if not overflow:
+            return []
+
+        LOGGER.warning(
+            "Caption for %s trimmed from %s to %s characters; sending remainder as text.",
+            attachment.kind,
+            len(caption),
+            len(head),
+        )
+
+        return self._split_text_for_limit(overflow, self.MESSAGE_LIMIT)
+
     async def _reply(
         self,
         update: Update,
@@ -2040,6 +2108,19 @@ class ConfettiTelegramBot:
 
         markup_used = False
         inline_markup = reply_markup if reply_markup and hasattr(reply_markup, "inline_keyboard") else None
+
+        extra_texts: list[str] = []
+        if media:
+            normalized_media: list[MediaAttachment] = []
+            for attachment in media:
+                clone = MediaAttachment(
+                    kind=attachment.kind,
+                    file_id=attachment.file_id,
+                    caption=attachment.caption,
+                )
+                extra_texts.extend(self._prepare_media_caption(clone))
+                normalized_media.append(clone)
+            media = normalized_media
 
         if (
             prefer_edit
@@ -2120,6 +2201,13 @@ class ConfettiTelegramBot:
                     LOGGER.warning("Failed to reply with media %s: %s", attachment.kind, exc)
         elif reply_markup is not None and not markup_used and target is not None:
             await target.reply_text("", reply_markup=reply_markup)
+
+        if extra_texts:
+            if target is None:
+                LOGGER.warning("Dropping %s overflow text segments; no target message available.", len(extra_texts))
+            else:
+                for overflow_text in extra_texts:
+                    await target.reply_text(overflow_text)
 
     def _extract_message_payload(self, message: Any | None) -> tuple[str, list[MediaAttachment]]:
         """Return the plain text and media attachments contained in ``message``."""
