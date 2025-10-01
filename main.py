@@ -1239,7 +1239,7 @@ class ConfettiTelegramBot:
                 self.REGISTRATION_PROGRAM: [
                     CallbackQueryHandler(
                         self._registration_collect_program,
-                        pattern=r"^reg_program:\\d+$",
+                        pattern=r"^reg_program:\d+$",
                     ),
                     CallbackQueryHandler(
                         self._registration_cancel_from_program,
