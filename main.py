@@ -17,6 +17,7 @@ import asyncio
 import base64
 import json
 import logging
+import warnings
 import mimetypes
 import os
 import random
@@ -67,6 +68,7 @@ if TYPE_CHECKING:
     from telegram.error import InvalidToken as TelegramInvalidToken
     from telegram.error import NetworkError as TelegramNetworkError
     from telegram.error import TimedOut as TelegramTimedOut
+    from telegram.warnings import PTBUserWarning
     from telegram.ext import (
         AIORateLimiter as _AIORateLimiter,
         Application,
@@ -109,11 +111,16 @@ else:  # pragma: no cover - import depends on environment
         filters = _MissingTelegramModule()  # type: ignore[assignment]
         TelegramInvalidToken = TelegramNetworkError = TelegramTimedOut = RuntimeError  # type: ignore[assignment]
         _AIORateLimiter = None
+        PTBUserWarning = Warning  # type: ignore[assignment]
     else:
         try:
             from telegram.ext import AIORateLimiter as _AIORateLimiter
         except ImportError:  # pragma: no cover - optional dependency
             _AIORateLimiter = None
+        try:
+            from telegram.warnings import PTBUserWarning
+        except ImportError:  # pragma: no cover - warning class depends on version
+            PTBUserWarning = Warning  # type: ignore[assignment]
 
 AIORateLimiter = _AIORateLimiter
 
@@ -1228,14 +1235,17 @@ class ConfettiTelegramBot:
     def _register_handlers(self, application: Application) -> None:
         """Attach all command and message handlers to ``application``."""
 
-        conversation = ConversationHandler(
-            entry_points=[
-                MessageHandler(
-                    filters.Regex(self._exact_match_regex(self.REGISTRATION_BUTTON)),
-                    self._start_registration,
-                )
-            ],
-            states={
+        with warnings.catch_warnings():
+            if PTBUserWarning is not None:
+                warnings.simplefilter("ignore", PTBUserWarning)
+            conversation = ConversationHandler(
+                entry_points=[
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.REGISTRATION_BUTTON)),
+                        self._start_registration,
+                    )
+                ],
+                states={
                 self.REGISTRATION_PROGRAM: [
                     CallbackQueryHandler(
                         self._registration_collect_program,
@@ -1332,26 +1342,28 @@ class ConfettiTelegramBot:
                 self.REGISTRATION_PAYMENT: [
                     MessageHandler(~filters.COMMAND, self._registration_collect_payment),
                 ],
-            },
-            fallbacks=[
-                CommandHandler("cancel", self._registration_cancel),
-                MessageHandler(
-                    filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                    self._registration_cancel,
-                ),
-            ],
-            allow_reentry=True,
-            per_message=True,
-        )
+                },
+                fallbacks=[
+                    CommandHandler("cancel", self._registration_cancel),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._registration_cancel,
+                    ),
+                ],
+                allow_reentry=True,
+            )
 
-        cancellation = ConversationHandler(
-            entry_points=[
-                MessageHandler(
-                    filters.Regex(self._exact_match_regex(self.CANCELLATION_BUTTON)),
-                    self._start_cancellation,
-                )
-            ],
-            states={
+        with warnings.catch_warnings():
+            if PTBUserWarning is not None:
+                warnings.simplefilter("ignore", PTBUserWarning)
+            cancellation = ConversationHandler(
+                entry_points=[
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.CANCELLATION_BUTTON)),
+                        self._start_cancellation,
+                    )
+                ],
+                states={
                 self.CANCELLATION_PROGRAM: [
                     MessageHandler(
                         filters.TEXT & ~filters.COMMAND,
@@ -1365,16 +1377,16 @@ class ConfettiTelegramBot:
                 self.CANCELLATION_REASON: [
                     MessageHandler(~filters.COMMAND, self._cancellation_collect_reason),
                 ],
-            },
-            fallbacks=[
-                CommandHandler("cancel", self._cancellation_cancel),
-                MessageHandler(
-                    filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                    self._cancellation_cancel,
-                ),
-            ],
-            allow_reentry=True,
-        )
+                },
+                fallbacks=[
+                    CommandHandler("cancel", self._cancellation_cancel),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._cancellation_cancel,
+                    ),
+                ],
+                allow_reentry=True,
+            )
 
         application.add_handler(CommandHandler("start", self._start))
         application.add_handler(CommandHandler("menu", self._show_main_menu))
