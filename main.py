@@ -60,6 +60,10 @@ if TYPE_CHECKING:
     from telegram import (
         InlineKeyboardButton,
         InlineKeyboardMarkup,
+        InputMediaAnimation,
+        InputMediaDocument,
+        InputMediaPhoto,
+        InputMediaVideo,
         KeyboardButton,
         ReplyKeyboardMarkup,
         ReplyKeyboardRemove,
@@ -85,6 +89,10 @@ else:  # pragma: no cover - import depends on environment
         from telegram import (
             InlineKeyboardButton,
             InlineKeyboardMarkup,
+            InputMediaAnimation,
+            InputMediaDocument,
+            InputMediaPhoto,
+            InputMediaVideo,
             KeyboardButton,
             ReplyKeyboardMarkup,
             ReplyKeyboardRemove,
@@ -106,6 +114,7 @@ else:  # pragma: no cover - import depends on environment
     except ModuleNotFoundError as exc:  # pragma: no cover - environment specific
         TELEGRAM_IMPORT_ERROR = exc
         InlineKeyboardButton = InlineKeyboardMarkup = KeyboardButton = ReplyKeyboardMarkup = ReplyKeyboardRemove = Update = object  # type: ignore[assignment]
+        InputMediaAnimation = InputMediaDocument = InputMediaPhoto = InputMediaVideo = object  # type: ignore[assignment]
         Application = ApplicationBuilder = CommandHandler = ConversationHandler = MessageHandler = object  # type: ignore[assignment]
         ContextTypes = object  # type: ignore[assignment]
         filters = _MissingTelegramModule()  # type: ignore[assignment]
@@ -1994,6 +2003,20 @@ class ConfettiTelegramBot:
             greeting += "\n\n🛠 У вас есть доступ к админ-панели — нажмите кнопку ниже, чтобы управлять контентом."
         await self._reply(update, greeting, reply_markup=self._main_menu_markup_for(update, context))
 
+    def _attachment_to_input_media(self, attachment: MediaAttachment):
+        try:
+            if attachment.kind == "photo":
+                return InputMediaPhoto(attachment.file_id, caption=attachment.caption)
+            if attachment.kind == "video":
+                return InputMediaVideo(attachment.file_id, caption=attachment.caption)
+            if attachment.kind == "animation":
+                return InputMediaAnimation(attachment.file_id, caption=attachment.caption)
+            if attachment.kind == "document":
+                return InputMediaDocument(attachment.file_id, caption=attachment.caption)
+        except NameError:  # pragma: no cover - optional telegram dependency
+            return None
+        return None
+
     async def _reply(
         self,
         update: Update,
@@ -2026,9 +2049,40 @@ class ConfettiTelegramBot:
         ):
             try:
                 if text is not None:
-                    await callback.message.edit_text(text, reply_markup=inline_markup)
+                    target_message = callback.message
+                    edited = False
+                    if any(
+                        getattr(target_message, attribute, None)
+                        for attribute in ("photo", "video", "animation", "document")
+                    ):
+                        try:
+                            await target_message.edit_caption(text, reply_markup=inline_markup)
+                        except Exception as exc:  # pragma: no cover - Telegram runtime dependent
+                            LOGGER.debug("Failed to edit caption: %s", exc)
+                        else:
+                            edited = True
+                    if not edited:
+                        await target_message.edit_text(text, reply_markup=inline_markup)
                     markup_used = inline_markup is not None
                     text = None
+                    target = target_message
+                elif media:
+                    if len(media) == 1:
+                        input_media = self._attachment_to_input_media(media[0])
+                        if input_media is not None:
+                            try:
+                                await callback.message.edit_media(
+                                    input_media,
+                                    reply_markup=inline_markup,
+                                )
+                            except Exception as exc:  # pragma: no cover - Telegram runtime dependent
+                                LOGGER.debug("Failed to edit media: %s", exc)
+                            else:
+                                markup_used = inline_markup is not None
+                                media = []
+                                target = callback.message
+                    if media:
+                        LOGGER.debug("Unable to edit media in place, falling back to new message")
                 elif inline_markup is not None:
                     await callback.message.edit_reply_markup(inline_markup)
                     markup_used = True
@@ -3558,6 +3612,34 @@ class ConfettiTelegramBot:
         content = self._get_content(context)
         intro = content.about.text.strip() if content.about.text else "О студии"
         message = intro + "\n\nВыберите направление, чтобы узнать подробности."
+        media: list[MediaAttachment] = []
+        if content.about.media:
+            first = content.about.media[0]
+            media.append(
+                MediaAttachment(kind=first.kind, file_id=first.file_id, caption=message)
+            )
+        else:
+            fallback_photo = next(
+                (
+                    program.get("photo_url") or program.get("photo_file_id")
+                    for program in self.PROGRAMS
+                    if program.get("photo_url") or program.get("photo_file_id")
+                ),
+                None,
+            )
+            if fallback_photo:
+                media.append(MediaAttachment(kind="photo", file_id=fallback_photo, caption=message))
+
+        if media:
+            await self._reply(
+                update,
+                text=None,
+                reply_markup=self._about_inline_keyboard(),
+                media=media,
+                prefer_edit=update.callback_query is not None,
+            )
+            return
+
         await self._reply(
             update,
             message,
@@ -3621,6 +3703,34 @@ class ConfettiTelegramBot:
     async def _send_teachers(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         content = self._get_content(context)
         intro = content.teachers.text.strip() if content.teachers.text else "Наши преподаватели — увлечённые и опытные педагоги."
+        media: list[MediaAttachment] = []
+        if content.teachers.media:
+            first = content.teachers.media[0]
+            media.append(
+                MediaAttachment(kind=first.kind, file_id=first.file_id, caption=intro)
+            )
+        else:
+            fallback_photo = next(
+                (
+                    teacher.get("photo_url") or teacher.get("photo_file_id")
+                    for teacher in self.TEACHERS
+                    if teacher.get("photo_url") or teacher.get("photo_file_id")
+                ),
+                None,
+            )
+            if fallback_photo:
+                media.append(MediaAttachment(kind="photo", file_id=fallback_photo, caption=intro))
+
+        if media:
+            await self._reply(
+                update,
+                text=None,
+                reply_markup=self._teacher_inline_keyboard(),
+                media=media,
+                prefer_edit=update.callback_query is not None,
+            )
+            return
+
         await self._reply(
             update,
             intro,
