@@ -513,6 +513,7 @@ class ConfettiTelegramBot:
     REGISTRATION_EDIT_DETAILS_BUTTON = "✏️ Изменить данные"
     REGISTRATION_KEEP_TIME_BUTTON = "🔁 То же время"
     REGISTRATION_NEW_TIME_BUTTON = "⏰ Другое время"
+    BACK_BUTTON = "◀️ Назад"
     ADMIN_MENU_BUTTON = "🛠 Админ-панель"
     ADMIN_BACK_TO_USER_BUTTON = "⬅️ Пользовательское меню"
     ADMIN_BROADCAST_BUTTON = "📣 Рассылка"
@@ -1239,6 +1240,10 @@ class ConfettiTelegramBot:
                         self._registration_collect_program,
                         pattern=r"^reg_program:\\d+$",
                     ),
+                    CallbackQueryHandler(
+                        self._registration_cancel_from_program,
+                        pattern=r"^reg_back:menu$",
+                    ),
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._registration_cancel,
@@ -1249,9 +1254,25 @@ class ConfettiTelegramBot:
                     ),
                 ],
                 self.REGISTRATION_CHILD_NAME: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._registration_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._registration_back_to_program,
+                    ),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_child_name),
                 ],
                 self.REGISTRATION_CLASS: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._registration_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._registration_back_to_child_name,
+                    ),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_class),
                 ],
                 self.REGISTRATION_PHONE: [
@@ -1265,6 +1286,10 @@ class ConfettiTelegramBot:
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.REGISTRATION_EDIT_DETAILS_BUTTON)),
                         self._registration_request_details_update,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._registration_back_from_confirm,
                     ),
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
@@ -1281,11 +1306,19 @@ class ConfettiTelegramBot:
                         self._registration_request_new_time,
                     ),
                     MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._registration_back_from_time_decision,
+                    ),
+                    MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._registration_cancel,
                     ),
                 ],
                 self.REGISTRATION_TIME: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._registration_back_from_time,
+                    ),
                     MessageHandler(
                         filters.Regex(self._time_regex()),
                         self._registration_collect_time,
@@ -2055,17 +2088,19 @@ class ConfettiTelegramBot:
     # ------------------------------------------------------------------
     # Registration conversation
 
+    def _registration_program_prompt(self) -> str:
+        return (
+            "На какую программу вы хотите записать ребёнка или себя?\n"
+            "Нажмите на кнопку ниже, чтобы выбрать вариант и посмотреть подробности."
+        )
+
     async def _start_registration(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         self._remember_chat(update, context)
         await self._purge_expired_registrations(context)
         context.user_data["registration"] = {}
-        prompt = (
-            "На какую программу вы хотите записать ребёнка или себя?\n"
-            "Нажмите на кнопку ниже, чтобы выбрать вариант и посмотреть подробности."
-        )
         await self._reply(
             update,
-            prompt,
+            self._registration_program_prompt(),
             reply_markup=self._program_inline_keyboard(),
         )
         return self.REGISTRATION_PROGRAM
@@ -2075,6 +2110,7 @@ class ConfettiTelegramBot:
             [InlineKeyboardButton(program["label"], callback_data=f"reg_program:{index}")]
             for index, program in enumerate(self.PROGRAMS)
         ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_back:menu")])
         return InlineKeyboardMarkup(buttons)
 
     def _teacher_inline_keyboard(self) -> "InlineKeyboardMarkup":
@@ -2096,7 +2132,7 @@ class ConfettiTelegramBot:
     ) -> int:
         await self._reply(
             update,
-            "Пожалуйста, воспользуйтесь кнопками ниже, чтобы выбрать программу.",
+            self._registration_program_prompt(),
             reply_markup=self._program_inline_keyboard(),
         )
         return self.REGISTRATION_PROGRAM
@@ -2117,16 +2153,20 @@ class ConfettiTelegramBot:
                 await query.answer("Программа недоступна.", show_alert=True)
                 return self.REGISTRATION_PROGRAM
             program = self.PROGRAMS[index]
+            await query.answer()
             program_label = program["label"]
-            try:  # pragma: no cover - depends on telegram runtime
-                await query.edit_message_reply_markup(None)
-            except Exception:
-                pass
             details = self._format_program_details(program)
-            await self._reply(
-                update,
-                f"Вы выбрали программу:\n{details}",
-            )
+            if query.message is not None:
+                try:  # pragma: no cover - depends on telegram runtime
+                    await query.edit_message_text(f"Вы выбрали программу:\n{details}")
+                except Exception:
+                    try:
+                        await query.edit_message_reply_markup(None)
+                    except Exception:
+                        pass
+                    await self._reply(update, f"Вы выбрали программу:\n{details}")
+            else:
+                await self._reply(update, f"Вы выбрали программу:\n{details}")
         else:
             program_label = (message.text if message else "").strip()
             program = next((item for item in self.PROGRAMS if item["label"] == program_label), None)
@@ -2154,86 +2194,187 @@ class ConfettiTelegramBot:
             saved_time = str(defaults.get("time", "") or "")
         if saved_time:
             registration["saved_time"] = saved_time
+            registration["saved_time_original"] = saved_time
+        else:
+            registration.pop("saved_time_original", None)
+            registration["saved_time"] = saved_time
 
         if not registration.get("child_name"):
-            await self._reply(
-                update,
-                "Отлично! Напишите, пожалуйста, имя и фамилию ребёнка.",
-                reply_markup=ReplyKeyboardRemove(),
-            )
-            return self.REGISTRATION_CHILD_NAME
+            return await self._registration_prompt_child_name(update, context)
 
         if not registration.get("class"):
-            await self._reply(
-                update,
-                (
-                    f"Мы сохранили имя: {registration.get('child_name', '—')}.\n"
-                    "Укажите, пожалуйста, класс."
-                ),
-                reply_markup=ReplyKeyboardRemove(),
-            )
-            return self.REGISTRATION_CLASS
+            return await self._registration_prompt_class(update, context, remind=True)
 
         if not registration.get("phone"):
-            await self._reply(
-                update,
-                (
-                    f"Мы сохранили имя и класс: {registration.get('child_name', '—')}"
-                    f" ({registration.get('class', '—')}).\n"
-                    "Введите номер телефона вручную."
-                ),
-                reply_markup=self._phone_keyboard(),
-            )
-            return self.REGISTRATION_PHONE
+            return await self._registration_prompt_phone(update, context, remind=True)
 
+        return await self._registration_show_saved_details_prompt(update, context)
+
+    async def _registration_prompt_child_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        if remind and registration.get("child_name"):
+            message = (
+                f"Сейчас указано имя: {registration.get('child_name', '—')}.\n"
+                "Введите новое имя и фамилию ребёнка."
+            )
+        else:
+            message = "Отлично! Напишите, пожалуйста, имя и фамилию ребёнка."
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.REGISTRATION_CHILD_NAME
+
+    async def _registration_prompt_class(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        child_name = registration.get("child_name", "—")
+        if remind and registration.get("class"):
+            message = (
+                f"Имя участника: {child_name}.\n"
+                f"Текущий класс: {registration.get('class', '—')}.\n"
+                "Укажите актуальный класс."
+            )
+        else:
+            message = f"Мы сохранили имя: {child_name}.\nУкажите, пожалуйста, класс."
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.REGISTRATION_CLASS
+
+    async def _registration_prompt_phone(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        child_name = registration.get("child_name", "—")
+        child_class = registration.get("class", "—")
+        if remind and registration.get("phone"):
+            message = (
+                f"Имя и класс: {child_name} ({child_class}).\n"
+                f"Сейчас указан номер: {registration.get('phone', '—')}.\n"
+                "Введите номер телефона вручную."
+            )
+        else:
+            message = (
+                f"Мы сохранили имя и класс: {child_name} ({child_class}).\n"
+                "Введите номер телефона вручную."
+            )
+        await self._reply(update, message, reply_markup=self._phone_keyboard())
+        return self.REGISTRATION_PHONE
+
+    async def _registration_show_saved_details_prompt(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
         message = (
             "Мы заполнили данные из вашей предыдущей заявки:\n"
             f"👦 Имя: {registration.get('child_name', '—')} ({registration.get('class', '—')})\n"
             f"📱 Телефон: {registration.get('phone', '—')}\n\n"
             "Нажмите «Продолжить», если всё верно, или «Изменить данные», чтобы указать новые значения."
         )
-        await self._reply(
-            update,
-            message,
-            reply_markup=self._saved_details_keyboard(),
-        )
+        await self._reply(update, message, reply_markup=self._saved_details_keyboard())
         return self.REGISTRATION_CONFIRM_DETAILS
 
-    async def _registration_collect_child_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        context.user_data.setdefault("registration", {})["child_name"] = update.message.text.strip()
+    async def _registration_cancel_from_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        query = update.callback_query
+        if query is not None:
+            await query.answer()
+            if query.message is not None:
+                try:  # pragma: no cover - depends on telegram runtime
+                    await query.edit_message_text("Регистрация прервана.")
+                except Exception:
+                    pass
+        context.user_data.pop("registration", None)
+        await self._show_main_menu(update, context)
+        return ConversationHandler.END
+
+    async def _registration_back_to_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("program", "time", "saved_time", "saved_time_original", "proposed_time"):
+            registration.pop(key, None)
         await self._reply(
             update,
-            "Укажите, пожалуйста, класс.",
+            self._registration_program_prompt(),
+            reply_markup=self._program_inline_keyboard(),
         )
-        return self.REGISTRATION_CLASS
+        return self.REGISTRATION_PROGRAM
+
+    async def _registration_back_to_child_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        return await self._registration_prompt_child_name(update, context, remind=True)
+
+    async def _registration_back_from_confirm(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        return await self._registration_prompt_phone(update, context, remind=True)
+
+    async def _registration_back_from_time_decision(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        registration.pop("proposed_time", None)
+        return await self._registration_show_saved_details_prompt(update, context)
+
+    async def _registration_back_from_time(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        registration.pop("time", None)
+        if registration.get("saved_time_original"):
+            registration["saved_time"] = registration["saved_time_original"]
+            return await self._prompt_time_of_day(update, context)
+        return await self._prompt_time_selection(update)
+
+    async def _registration_back_to_time(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        registration.pop("payment_media", None)
+        registration.pop("payment_note", None)
+        return await self._registration_back_from_time(update, context)
+
+    async def _registration_collect_child_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._registration_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._registration_back_to_program(update, context)
+        context.user_data.setdefault("registration", {})["child_name"] = text
+        return await self._registration_prompt_class(update, context)
 
     async def _registration_collect_class(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        context.user_data.setdefault("registration", {})["class"] = update.message.text.strip()
-        await self._reply(
-            update,
-            "Введите номер телефона вручную.",
-            reply_markup=self._phone_keyboard(),
-        )
-        return self.REGISTRATION_PHONE
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._registration_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._registration_prompt_child_name(update, context, remind=True)
+        context.user_data.setdefault("registration", {})["class"] = text
+        return await self._registration_prompt_phone(update, context)
+
+    def _back_keyboard(self, *, include_menu: bool = True) -> ReplyKeyboardMarkup:
+        row = [KeyboardButton(self.BACK_BUTTON)]
+        if include_menu:
+            row.append(KeyboardButton(self.MAIN_MENU_BUTTON))
+        return ReplyKeyboardMarkup([row], resize_keyboard=True, one_time_keyboard=True)
 
     def _phone_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [
-            [KeyboardButton(self.MAIN_MENU_BUTTON)],
-        ]
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+        return self._back_keyboard()
 
     def _saved_details_keyboard(self) -> ReplyKeyboardMarkup:
         keyboard = [
             [KeyboardButton(self.REGISTRATION_CONFIRM_SAVED_BUTTON)],
             [KeyboardButton(self.REGISTRATION_EDIT_DETAILS_BUTTON)],
-            [KeyboardButton(self.MAIN_MENU_BUTTON)],
+            [KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)],
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     def _payment_keyboard(self) -> ReplyKeyboardMarkup:
         keyboard = [
             [KeyboardButton(self.REGISTRATION_SKIP_PAYMENT_BUTTON)],
-            [KeyboardButton(self.MAIN_MENU_BUTTON)],
+            [KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)],
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
@@ -2241,13 +2382,13 @@ class ConfettiTelegramBot:
         keyboard = [
             [KeyboardButton(self.REGISTRATION_KEEP_TIME_BUTTON)],
             [KeyboardButton(self.REGISTRATION_NEW_TIME_BUTTON)],
-            [KeyboardButton(self.MAIN_MENU_BUTTON)],
+            [KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)],
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     def _cancellation_keyboard(self, labels: list[str]) -> ReplyKeyboardMarkup:
         keyboard = [[label] for label in labels]
-        keyboard.append([self.MAIN_MENU_BUTTON])
+        keyboard.append([self.BACK_BUTTON, self.MAIN_MENU_BUTTON])
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     async def _registration_collect_phone_text(
@@ -2256,6 +2397,8 @@ class ConfettiTelegramBot:
         text = update.message.text.strip()
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._registration_prompt_class(update, context, remind=True)
         context.user_data.setdefault("registration", {})["phone"] = text
         return await self._prompt_time_of_day(update, context)
 
@@ -2276,6 +2419,7 @@ class ConfettiTelegramBot:
         if not saved_time:
             return await self._registration_request_new_time(update, context)
         registration["time"] = saved_time
+        registration.setdefault("saved_time_original", saved_time)
         registration.pop("saved_time", None)
         registration.pop("proposed_time", None)
         return await self._prompt_payment_request(update, context)
@@ -2284,6 +2428,9 @@ class ConfettiTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
+        original = registration.get("saved_time") or registration.get("saved_time_original")
+        if original:
+            registration["saved_time_original"] = original
         registration.pop("proposed_time", None)
         registration.pop("saved_time", None)
         return await self._prompt_time_selection(update)
@@ -2294,12 +2441,7 @@ class ConfettiTelegramBot:
         registration = context.user_data.setdefault("registration", {})
         for key in ("child_name", "class", "phone"):
             registration.pop(key, None)
-        await self._reply(
-            update,
-            "Напишите, пожалуйста, имя и фамилию ребёнка.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        return self.REGISTRATION_CHILD_NAME
+        return await self._registration_prompt_child_name(update, context, remind=True)
 
     async def _prompt_time_of_day(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -2307,6 +2449,7 @@ class ConfettiTelegramBot:
         registration = context.user_data.setdefault("registration", {})
         saved_time = str(registration.get("saved_time", "")).strip()
         if saved_time:
+            registration.setdefault("saved_time_original", saved_time)
             registration["proposed_time"] = saved_time
             message = (
                 "⏱️ Ранее вы выбирали время: "
@@ -2331,12 +2474,19 @@ class ConfettiTelegramBot:
 
     def _time_keyboard(self) -> ReplyKeyboardMarkup:
         keyboard = [[option] for option in self.TIME_OF_DAY_OPTIONS]
-        keyboard.append([self.MAIN_MENU_BUTTON])
+        keyboard.append([self.BACK_BUTTON, self.MAIN_MENU_BUTTON])
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     async def _registration_collect_time(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._registration_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._registration_back_from_time(update, context)
         registration = context.user_data.setdefault("registration", {})
-        registration["time"] = update.message.text.strip()
+        registration["time"] = text
+        if not registration.get("saved_time_original"):
+            registration["saved_time_original"] = text
         registration.pop("saved_time", None)
         registration.pop("proposed_time", None)
         return await self._prompt_payment_request(update, context)
@@ -2365,6 +2515,9 @@ class ConfettiTelegramBot:
 
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
+
+        if text == self.BACK_BUTTON:
+            return await self._registration_back_to_time(update, context)
 
         if text == self.REGISTRATION_SKIP_PAYMENT_BUTTON:
             data["payment_note"] = "Платёж будет подтверждён позже"
@@ -2454,6 +2607,8 @@ class ConfettiTelegramBot:
         payload = update.message.text.strip()
         if payload == self.MAIN_MENU_BUTTON:
             return await self._cancellation_cancel(update, context)
+        if payload == self.BACK_BUTTON:
+            return await self._cancellation_cancel(update, context)
 
         data = context.user_data.setdefault("cancellation", {})
         options: dict[str, dict[str, Any]] = data.get("options", {})  # type: ignore[assignment]
@@ -2474,9 +2629,29 @@ class ConfettiTelegramBot:
         await self._reply(
             update,
             "📅 Напишите дату и время пропуска, а также короткий комментарий.",
-            reply_markup=ReplyKeyboardRemove(),
+            reply_markup=self._back_keyboard(),
         )
         return self.CANCELLATION_REASON
+
+    async def _cancellation_restart_program(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        options: dict[str, dict[str, Any]],
+    ) -> int:
+        data = context.user_data.setdefault("cancellation", {})
+        data.pop("details", None)
+        data.pop("evidence", None)
+        message = (
+            "❗️ Выберите занятие, которое хотите отменить.\n\n"
+            "⚠️ Оплата не возвращается — средства остаются на балансе студии."
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._cancellation_keyboard(list(options.keys())),
+        )
+        return self.CANCELLATION_PROGRAM
 
     async def _cancellation_collect_reason(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -2486,6 +2661,9 @@ class ConfettiTelegramBot:
 
         if text == self.MAIN_MENU_BUTTON:
             return await self._cancellation_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            options: dict[str, dict[str, Any]] = data.get("options", {})  # type: ignore[assignment]
+            return await self._cancellation_restart_program(update, context, options)
 
         if attachments:
             data["evidence"] = self._attachments_to_dicts(attachments)
