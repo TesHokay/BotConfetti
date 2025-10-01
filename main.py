@@ -21,7 +21,7 @@ import mimetypes
 import os
 import random
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 from collections.abc import Iterable
@@ -519,6 +519,7 @@ class ConfettiTelegramBot:
     REGISTRATION_TIME = 5
     REGISTRATION_PAYMENT = 6
     REGISTRATION_CONFIRM_DETAILS = 7
+    REGISTRATION_TIME_DECISION = 8
 
     CANCELLATION_PROGRAM = 21
     CANCELLATION_REASON = 22
@@ -529,6 +530,8 @@ class ConfettiTelegramBot:
     REGISTRATION_SKIP_PAYMENT_BUTTON = "⏭ Пока без оплаты"
     REGISTRATION_CONFIRM_SAVED_BUTTON = "✅ Продолжить"
     REGISTRATION_EDIT_DETAILS_BUTTON = "✏️ Изменить данные"
+    REGISTRATION_KEEP_TIME_BUTTON = "🔁 То же время"
+    REGISTRATION_NEW_TIME_BUTTON = "⏰ Другое время"
     ADMIN_MENU_BUTTON = "🛠 Админ-панель"
     ADMIN_BACK_TO_USER_BUTTON = "⬅️ Пользовательское меню"
     ADMIN_BROADCAST_BUTTON = "📣 Рассылка"
@@ -822,14 +825,51 @@ class ConfettiTelegramBot:
         if not isinstance(profiles, dict):
             profiles = {}
         else:
-            normalised_profiles: dict[str, dict[str, str]] = {}
+            normalised_profiles: dict[str, dict[str, Any]] = {}
             for key, value in profiles.items():
-                if isinstance(key, str) and isinstance(value, dict):
-                    normalised_profiles[key] = {
-                        "child_name": str(value.get("child_name", "")),
-                        "class": str(value.get("class", "")),
-                        "phone": str(value.get("phone", "")),
-                    }
+                if not isinstance(key, str) or not isinstance(value, dict):
+                    continue
+
+                def _text(field: str) -> str:
+                    payload = value.get(field)
+                    return str(payload) if payload is not None else ""
+
+                def _item_text(source: dict[str, Any], field: str) -> str:
+                    payload = source.get(field)
+                    return str(payload) if payload is not None else ""
+
+                entry: dict[str, Any] = {
+                    "child_name": _text("child_name"),
+                    "class": _text("class"),
+                    "phone": _text("phone"),
+                    "last_program": _text("last_program"),
+                    "last_time": _text("last_time"),
+                }
+
+                registrations_payload = value.get("registrations")
+                registrations: list[dict[str, str]] = []
+                if isinstance(registrations_payload, list):
+                    seen_ids: set[str] = set()
+                    for item in registrations_payload:
+                        if not isinstance(item, dict):
+                            continue
+                        reg_id_raw = item.get("id")
+                        reg_id = str(reg_id_raw).strip() if reg_id_raw is not None else ""
+                        if not reg_id or reg_id in seen_ids:
+                            continue
+                        seen_ids.add(reg_id)
+                        registrations.append(
+                            {
+                                "id": reg_id,
+                                "program": _item_text(item, "program"),
+                                "time": _item_text(item, "time"),
+                                "child_name": _item_text(item, "child_name"),
+                                "class": _item_text(item, "class"),
+                                "created_at": _item_text(item, "created_at"),
+                            }
+                        )
+                entry["registrations"] = registrations
+                normalised_profiles[key] = entry
             profiles = normalised_profiles
         data["user_profiles"] = profiles
 
@@ -925,15 +965,21 @@ class ConfettiTelegramBot:
                 )
         return ContentBlock(text=text, media=media)
 
+    def _user_key(self, identity: Any | None) -> Optional[str]:
+        if identity is None:
+            return None
+        candidate = getattr(identity, "id", identity)
+        try:
+            coerced = _coerce_chat_id(candidate)  # type: ignore[arg-type]
+        except ValueError:
+            return None
+        return str(coerced)
+
     def _get_user_defaults(self, user: Any | None) -> dict[str, str]:
         if user is None:
             return {}
-        user_id = getattr(user, "id", None)
-        if user_id is None:
-            return {}
-        try:
-            user_key = str(int(user_id))
-        except (TypeError, ValueError):
+        user_key = self._user_key(user)
+        if user_key is None:
             return {}
         profiles = self._persistent_store.setdefault("user_profiles", {})
         if not isinstance(profiles, dict):
@@ -945,32 +991,175 @@ class ConfettiTelegramBot:
                 "child_name": entry.get("child_name", ""),
                 "class": entry.get("class", ""),
                 "phone": entry.get("phone", ""),
+                "program": entry.get("last_program", ""),
+                "time": entry.get("last_time", ""),
             }
         return {}
 
     def _update_user_defaults(self, user: Any | None, data: dict[str, Any]) -> bool:
         if user is None:
             return False
-        user_id = getattr(user, "id", None)
-        if user_id is None:
-            return False
-        try:
-            user_key = str(int(user_id))
-        except (TypeError, ValueError):
+        user_key = self._user_key(user)
+        if user_key is None:
             return False
         profiles = self._persistent_store.setdefault("user_profiles", {})
         if not isinstance(profiles, dict):
             profiles = {}
             self._persistent_store["user_profiles"] = profiles
-        new_entry = {
-            "child_name": str(data.get("child_name", "")),
-            "class": str(data.get("class", "")),
-            "phone": str(data.get("phone", "")),
-        }
-        if profiles.get(user_key) == new_entry:
+        entry = profiles.get(user_key)
+        if not isinstance(entry, dict):
+            entry = {}
+            profiles[user_key] = entry
+
+        changed = False
+        for source_key, target_key in (
+            ("child_name", "child_name"),
+            ("class", "class"),
+            ("phone", "phone"),
+        ):
+            value = str(data.get(source_key, ""))
+            if entry.get(target_key) != value:
+                entry[target_key] = value
+                changed = True
+
+        for source_key, target_key in (("program", "last_program"), ("time", "last_time")):
+            value = data.get(source_key)
+            if value is None:
+                continue
+            value_str = str(value)
+            if entry.get(target_key) != value_str:
+                entry[target_key] = value_str
+                changed = True
+
+        registrations = entry.get("registrations")
+        if not isinstance(registrations, list):
+            entry["registrations"] = []
+            changed = True
+
+        return changed
+
+    def _identity_keys(self, *identities: Any | None) -> list[str]:
+        keys: list[str] = []
+        for identity in identities:
+            key = self._user_key(identity)
+            if key is not None and key not in keys:
+                keys.append(key)
+        return keys
+
+    def _user_profile_entry_by_key(self, user_key: str) -> dict[str, Any]:
+        profiles = self._persistent_store.setdefault("user_profiles", {})
+        if not isinstance(profiles, dict):
+            profiles = {}
+            self._persistent_store["user_profiles"] = profiles
+        entry = profiles.get(user_key)
+        if not isinstance(entry, dict):
+            entry = {}
+            profiles[user_key] = entry
+        registrations = entry.get("registrations")
+        if not isinstance(registrations, list):
+            entry["registrations"] = []
+        return entry
+
+    def _append_user_registration_snapshot(
+        self,
+        record: dict[str, Any],
+        *identities: Any | None,
+    ) -> bool:
+        record_id = record.get("id")
+        if record_id is None:
             return False
-        profiles[user_key] = new_entry
-        return True
+        record_id_str = str(record_id)
+        snapshot = {
+            "id": record_id_str,
+            "program": str(record.get("program", "")),
+            "time": str(record.get("time", "")),
+            "child_name": str(record.get("child_name", "")),
+            "class": str(record.get("class", "")),
+            "created_at": str(record.get("created_at", "")),
+        }
+        changed = False
+        for key in self._identity_keys(*identities):
+            entry = self._user_profile_entry_by_key(key)
+            registrations = entry.setdefault("registrations", [])
+            if not isinstance(registrations, list):
+                registrations = []
+                entry["registrations"] = registrations
+            replaced = False
+            for index, existing in enumerate(registrations):
+                if isinstance(existing, dict) and existing.get("id") == record_id_str:
+                    if existing != snapshot:
+                        registrations[index] = snapshot
+                        changed = True
+                    replaced = True
+                    break
+            if not replaced:
+                registrations.append(snapshot)
+                changed = True
+            if snapshot["program"] and entry.get("last_program") != snapshot["program"]:
+                entry["last_program"] = snapshot["program"]
+                changed = True
+            if snapshot["time"] and entry.get("last_time") != snapshot["time"]:
+                entry["last_time"] = snapshot["time"]
+                changed = True
+        return changed
+
+    def _remove_user_registration_snapshot(self, record: dict[str, Any]) -> bool:
+        record_id = record.get("id")
+        if record_id is None:
+            return False
+        record_id_str = str(record_id)
+        identities = self._identity_keys(record.get("submitted_by_id"), record.get("chat_id"))
+        if not identities:
+            return False
+        changed = False
+        for key in identities:
+            entry = self._user_profile_entry_by_key(key)
+            registrations = entry.get("registrations")
+            if not isinstance(registrations, list):
+                entry["registrations"] = []
+                continue
+            original_len = len(registrations)
+            registrations[:] = [
+                item for item in registrations if not (isinstance(item, dict) and item.get("id") == record_id_str)
+            ]
+            if len(registrations) != original_len:
+                changed = True
+                if registrations:
+                    latest = registrations[-1]
+                    entry["last_program"] = str(latest.get("program", ""))
+                    entry["last_time"] = str(latest.get("time", ""))
+                else:
+                    entry["last_program"] = ""
+                    entry["last_time"] = ""
+        return changed
+
+    def _collect_user_registrations(
+        self,
+        user: Any | None,
+        chat: Any | None,
+    ) -> list[dict[str, Any]]:
+        records: dict[str, dict[str, Any]] = {}
+        profiles = self._persistent_store.setdefault("user_profiles", {})
+        if not isinstance(profiles, dict):
+            profiles = {}
+            self._persistent_store["user_profiles"] = profiles
+        for key in self._identity_keys(user, chat):
+            entry = profiles.get(key)
+            if not isinstance(entry, dict):
+                continue
+            registrations = entry.get("registrations")
+            if not isinstance(registrations, list):
+                continue
+            for item in registrations:
+                if not isinstance(item, dict):
+                    continue
+                record_id = item.get("id")
+                if not record_id:
+                    continue
+                record_id_str = str(record_id)
+                if record_id_str not in records:
+                    records[record_id_str] = item
+        return list(records.values())
 
     def build_profile(self, chat: Any, user: Any | None = None) -> "UserProfile":
         """Return the appropriate profile for ``chat`` and optional ``user``."""
@@ -1050,6 +1239,20 @@ class ConfettiTelegramBot:
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.REGISTRATION_EDIT_DETAILS_BUTTON)),
                         self._registration_request_details_update,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._registration_cancel,
+                    ),
+                ],
+                self.REGISTRATION_TIME_DECISION: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.REGISTRATION_KEEP_TIME_BUTTON)),
+                        self._registration_use_saved_time,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.REGISTRATION_NEW_TIME_BUTTON)),
+                        self._registration_request_new_time,
                     ),
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
@@ -1311,6 +1514,9 @@ class ConfettiTelegramBot:
             self._application_data(context)["registrations"] = [record]
             needs_save = True
 
+        if self._append_user_registration_snapshot(record, user, chat):
+            needs_save = True
+
         if self._update_user_defaults(user, data):
             needs_save = True
 
@@ -1377,6 +1583,58 @@ class ConfettiTelegramBot:
             return None
         return f'=IMAGE("{data_url}")'
 
+    def _parse_record_timestamp(self, value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    return datetime.strptime(value, fmt)
+                except ValueError:
+                    continue
+        return None
+
+    async def _purge_expired_registrations(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        registrations = self._application_data(context).get("registrations")
+        if not isinstance(registrations, list) or not registrations:
+            return
+
+        threshold = datetime.utcnow() - timedelta(days=7)
+        removed: list[dict[str, Any]] = []
+        for index in range(len(registrations) - 1, -1, -1):
+            record = registrations[index]
+            if not isinstance(record, dict):
+                continue
+            created_at = self._parse_record_timestamp(record.get("created_at"))
+            if created_at is None:
+                continue
+            if created_at < threshold:
+                removed.append(registrations.pop(index))
+
+        if not removed:
+            return
+
+        profiles_changed = False
+        for record in removed:
+            if self._remove_user_registration_snapshot(record):
+                profiles_changed = True
+
+        if profiles_changed or removed:
+            self._save_persistent_state()
+
+        backend = self._sheets_backend
+        if backend is None:
+            return
+
+        for record in removed:
+            registration_id = record.get("id")
+            if not registration_id:
+                continue
+            try:
+                await backend.delete_registration(str(registration_id))
+            except Exception as exc:  # pragma: no cover - network dependent
+                LOGGER.warning("Не удалось удалить просроченную запись из Google Sheets: %s", exc)
+
     async def _download_photo_data_url(
         self,
         context: ContextTypes.DEFAULT_TYPE,
@@ -1414,22 +1672,35 @@ class ConfettiTelegramBot:
         if not isinstance(registrations, list):
             return None
 
-        chat_id = cancellation.get("chat_id")
-        user_id = cancellation.get("submitted_by_id")
-        program = cancellation.get("program")
+        target_id = cancellation.get("registration_id")
+        target_id_str = str(target_id) if target_id is not None else None
 
         match_index: Optional[int] = None
-        for index in range(len(registrations) - 1, -1, -1):
-            candidate = registrations[index]
-            if not isinstance(candidate, dict):
-                continue
-            if chat_id is not None and candidate.get("chat_id") == chat_id:
+        if target_id_str:
+            for index in range(len(registrations) - 1, -1, -1):
+                candidate = registrations[index]
+                if not isinstance(candidate, dict):
+                    continue
+                if str(candidate.get("id")) == target_id_str:
+                    match_index = index
+                    break
+
+        if match_index is None:
+            chat_id = cancellation.get("chat_id")
+            user_id = cancellation.get("submitted_by_id")
+            program = cancellation.get("program")
+            time_value = cancellation.get("time")
+            for index in range(len(registrations) - 1, -1, -1):
+                candidate = registrations[index]
+                if not isinstance(candidate, dict):
+                    continue
+                if chat_id is not None and candidate.get("chat_id") != chat_id:
+                    continue
+                if user_id is not None and candidate.get("submitted_by_id") != user_id:
+                    continue
                 if program and candidate.get("program") != program:
                     continue
-                match_index = index
-                break
-            if user_id is not None and candidate.get("submitted_by_id") == user_id:
-                if program and candidate.get("program") != program:
+                if time_value and candidate.get("time") != time_value:
                     continue
                 match_index = index
                 break
@@ -1438,6 +1709,7 @@ class ConfettiTelegramBot:
             return None
 
         removed = registrations.pop(match_index)
+        self._remove_user_registration_snapshot(removed)
 
         backend = self._sheets_backend
         registration_id = removed.get("id")
@@ -1473,6 +1745,9 @@ class ConfettiTelegramBot:
         user = update.effective_user
         record = {
             "program": data.get("program", ""),
+            "time": data.get("time", ""),
+            "child_name": data.get("child_name", ""),
+            "registration_id": data.get("registration_id"),
             "details": data.get("details", ""),
             "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
             "submitted_by": getattr(user, "full_name", None) if user else None,
@@ -1493,19 +1768,22 @@ class ConfettiTelegramBot:
             record["removed_registration_id"] = removed.get("id")
             record["removed_child"] = removed.get("child_name")
             record["removed_program"] = removed.get("program")
+            record["removed_time"] = removed.get("time")
 
         self._save_persistent_state()
 
         admin_message = (
             "🚫 Отмена занятия\n"
             f"📚 Программа: {record.get('program', '—')}\n"
+            f"🕒 Время: {record.get('time', '—')}\n"
+            f"👦 Участник: {record.get('child_name', '—')}\n"
             f"📝 Комментарий: {record.get('details', '—')}\n"
             f"👤 Отправил: {record.get('submitted_by', '—')}"
         )
         if removed:
             admin_message += (
                 "\n🗂 Заявка удалена из таблицы: "
-                f"{removed.get('child_name', '—')} ({removed.get('program', '—')})"
+                f"{removed.get('child_name', '—')} ({removed.get('program', '—')}, {removed.get('time', '—')})"
             )
         else:
             admin_message += "\n⚠️ В таблице не нашлось записи, соответствующей этой отмене."
@@ -1754,6 +2032,7 @@ class ConfettiTelegramBot:
 
     async def _start_registration(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         self._remember_chat(update, context)
+        await self._purge_expired_registrations(context)
         context.user_data["registration"] = {}
         message_lines = [
             "🇫🇷 À quel programme souhaitez-vous inscrire votre enfant ou vous inscrire ?",
@@ -1790,6 +2069,17 @@ class ConfettiTelegramBot:
                 value = defaults.get(key)
                 if value:
                     registration[key] = value
+
+        saved_time = ""
+        user_records = self._collect_user_registrations(update.effective_user, update.effective_chat)
+        for record in reversed(user_records):
+            if record.get("program") == program_label and record.get("time"):
+                saved_time = str(record.get("time"))
+                break
+        if not saved_time and defaults:
+            saved_time = str(defaults.get("time", "") or "")
+        if saved_time:
+            registration["saved_time"] = saved_time
 
         if not registration.get("child_name"):
             await self._reply(
@@ -1875,6 +2165,19 @@ class ConfettiTelegramBot:
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
+    def _saved_time_keyboard(self) -> ReplyKeyboardMarkup:
+        keyboard = [
+            [KeyboardButton(self.REGISTRATION_KEEP_TIME_BUTTON)],
+            [KeyboardButton(self.REGISTRATION_NEW_TIME_BUTTON)],
+            [KeyboardButton(self.MAIN_MENU_BUTTON)],
+        ]
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+    def _cancellation_keyboard(self, labels: list[str]) -> ReplyKeyboardMarkup:
+        keyboard = [[label] for label in labels]
+        keyboard.append([self.MAIN_MENU_BUTTON])
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
     async def _registration_collect_phone_text(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
@@ -1882,12 +2185,36 @@ class ConfettiTelegramBot:
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
         context.user_data.setdefault("registration", {})["phone"] = text
-        return await self._prompt_time_of_day(update)
+        return await self._prompt_time_of_day(update, context)
 
     async def _registration_accept_saved_details(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        return await self._prompt_time_of_day(update)
+        return await self._prompt_time_of_day(update, context)
+
+    async def _registration_use_saved_time(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        saved_time = str(
+            registration.get("proposed_time")
+            or registration.get("saved_time")
+            or registration.get("time", "")
+        ).strip()
+        if not saved_time:
+            return await self._registration_request_new_time(update, context)
+        registration["time"] = saved_time
+        registration.pop("saved_time", None)
+        registration.pop("proposed_time", None)
+        return await self._prompt_payment_request(update, context)
+
+    async def _registration_request_new_time(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        registration.pop("proposed_time", None)
+        registration.pop("saved_time", None)
+        return await self._prompt_time_selection(update)
 
     async def _registration_request_details_update(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1902,7 +2229,27 @@ class ConfettiTelegramBot:
         )
         return self.REGISTRATION_CHILD_NAME
 
-    async def _prompt_time_of_day(self, update: Update) -> int:
+    async def _prompt_time_of_day(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        saved_time = str(registration.get("saved_time", "")).strip()
+        if saved_time:
+            registration["proposed_time"] = saved_time
+            message = (
+                "⏱️ Ранее вы выбирали время: "
+                f"{saved_time}.\n"
+                "🔁 Нажмите «То же время», чтобы оставить его, или «Другое время», чтобы выбрать новый слот."
+            )
+            await self._reply(
+                update,
+                message,
+                reply_markup=self._saved_time_keyboard(),
+            )
+            return self.REGISTRATION_TIME_DECISION
+        return await self._prompt_time_selection(update)
+
+    async def _prompt_time_selection(self, update: Update) -> int:
         await self._reply(
             update,
             "🇫🇷 Choisissez le moment qui vous convient.\n"
@@ -1917,7 +2264,10 @@ class ConfettiTelegramBot:
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     async def _registration_collect_time(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        context.user_data.setdefault("registration", {})["time"] = update.message.text.strip()
+        registration = context.user_data.setdefault("registration", {})
+        registration["time"] = update.message.text.strip()
+        registration.pop("saved_time", None)
+        registration.pop("proposed_time", None)
         return await self._prompt_payment_request(update, context)
 
     async def _prompt_payment_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1976,19 +2326,85 @@ class ConfettiTelegramBot:
 
     async def _start_cancellation(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         self._remember_chat(update, context)
-        context.user_data["cancellation"] = {}
+        await self._purge_expired_registrations(context)
+        records = self._collect_user_registrations(update.effective_user, update.effective_chat)
+        if not records:
+            await self._reply(
+                update,
+                (
+                    "ℹ️ Активных записей не найдено.\n"
+                    "ℹ️ Aucun enregistrement actif n'a été trouvé."
+                ),
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            await self._show_main_menu(update, context)
+            return ConversationHandler.END
+
+        sorted_records = sorted(
+            records,
+            key=lambda item: self._parse_record_timestamp(item.get("created_at")) or datetime.min,
+            reverse=True,
+        )
+        options: dict[str, dict[str, Any]] = {}
+        counts: dict[str, int] = {}
+        for record in sorted_records:
+            base_label = self._format_cancellation_option(record)
+            index = counts.get(base_label, 0)
+            counts[base_label] = index + 1
+            label = base_label if index == 0 else f"{base_label} ({index + 1})"
+            options[label] = record
+
+        context.user_data["cancellation"] = {"options": options}
         message = (
-            "❗️ 🇫🇷 Indiquez la séance que vous annulez.\n"
-            "❗️ 🇷🇺 Укажите занятие, которое вы пропускаете.\n\n"
+            "❗️ 🇷🇺 Выберите занятие, которое хотите отменить.\n"
+            "❗️ 🇫🇷 Choisissez la séance à annuler.\n\n"
             "⚠️ Оплата не возвращается — средства остаются на балансе студии."
         )
-        await self._reply(update, message, reply_markup=self._program_keyboard())
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._cancellation_keyboard(list(options.keys())),
+        )
         return self.CANCELLATION_PROGRAM
+
+    def _format_cancellation_option(self, record: dict[str, Any]) -> str:
+        program = str(record.get("program", "")) or "Без программы"
+        time = str(record.get("time", ""))
+        child = str(record.get("child_name", ""))
+        record_id = str(record.get("id", ""))
+        suffix = f"#{record_id[-4:]}" if record_id else ""
+        components = [program]
+        if time:
+            components.append(time)
+        if child:
+            components.append(child)
+        if suffix:
+            components.append(suffix)
+        return " • ".join(components)
 
     async def _cancellation_collect_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        context.user_data.setdefault("cancellation", {})["program"] = update.message.text.strip()
+        payload = update.message.text.strip()
+        if payload == self.MAIN_MENU_BUTTON:
+            return await self._cancellation_cancel(update, context)
+
+        data = context.user_data.setdefault("cancellation", {})
+        options: dict[str, dict[str, Any]] = data.get("options", {})  # type: ignore[assignment]
+        record = options.get(payload)
+        if record is None:
+            await self._reply(
+                update,
+                "Пожалуйста, выберите запись из списка.",
+                reply_markup=self._cancellation_keyboard(list(options.keys())),
+            )
+            return self.CANCELLATION_PROGRAM
+
+        data["selected_registration"] = record
+        data["program"] = record.get("program", "")
+        data["time"] = record.get("time", "")
+        data["child_name"] = record.get("child_name", "")
+        data["registration_id"] = record.get("id")
         await self._reply(
             update,
             "📅 Напишите дату и время пропуска, а также короткий комментарий.\n"
@@ -2011,6 +2427,7 @@ class ConfettiTelegramBot:
         data["details"] = text or ""
 
         await self._store_cancellation(update, context, data, attachments or None)
+        context.user_data.pop("cancellation", None)
 
         confirmation = (
             "✅ Отмена зафиксирована.\n"
@@ -2384,6 +2801,7 @@ class ConfettiTelegramBot:
     async def _admin_share_registrations_table(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
+        await self._purge_expired_registrations(context)
         registrations = self._application_data(context).get("registrations", [])
         if not isinstance(registrations, list) or not registrations:
             await self._reply(
@@ -2583,6 +3001,7 @@ class ConfettiTelegramBot:
         if chat is None:
             return False
 
+        await self._purge_expired_registrations(context)
         registrations = self._application_data(context).get("registrations", [])
         if path is None or generated_at is None:
             if not isinstance(registrations, list) or not registrations:
