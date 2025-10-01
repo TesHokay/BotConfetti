@@ -1341,6 +1341,7 @@ class ConfettiTelegramBot:
                 ),
             ],
             allow_reentry=True,
+            per_message=True,
         )
 
         cancellation = ConversationHandler(
