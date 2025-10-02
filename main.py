@@ -3219,7 +3219,7 @@ class ConfettiTelegramBot:
             message_parts.extend(preview_lines)
         message_parts.append("")
         message_parts.append(
-            "🔍 Фото подтверждения оплаты встроено в отдельную колонку таблицы."
+            "🔍 Фото подтверждения оплаты доступно по кликабельной ссылке внутри таблицы."
         )
         if deeplink:
             message_parts.append("")
@@ -3249,6 +3249,14 @@ class ConfettiTelegramBot:
         context: ContextTypes.DEFAULT_TYPE,
         registrations: list[dict[str, Any]],
     ) -> tuple[Path, str]:
+        bot_username = self._bot_username
+        if not bot_username:
+            bot = getattr(context, "bot", None)
+            candidate = getattr(bot, "username", None)
+            if candidate:
+                bot_username = candidate
+                self._bot_username = candidate
+
         builder = _SimpleXlsxBuilder(
             sheet_name="Заявки",
             column_widths=(
@@ -3280,9 +3288,11 @@ class ConfettiTelegramBot:
             payment_note = record.get("payment_note") or ""
             preview_info = self._extract_payment_preview(record)
             photo_cell = self._build_payment_photo_cell(
-                preview_info,
-                payment_entries,
-                payment_note,
+                registration_id=str(record.get("id")) if record.get("id") is not None else None,
+                bot_username=bot_username,
+                preview_info=preview_info,
+                attachments=payment_entries,
+                payment_note=payment_note,
             )
 
             builder.add_row(
@@ -3345,6 +3355,8 @@ class ConfettiTelegramBot:
 
     def _build_payment_photo_cell(
         self,
+        registration_id: Optional[str],
+        bot_username: Optional[str],
         preview_info: Optional[tuple[Optional[str], bytes, str, str]],
         attachments: list[MediaAttachment],
         payment_note: str,
@@ -3353,27 +3365,35 @@ class ConfettiTelegramBot:
         if payment_note:
             text_chunks.append(payment_note)
 
-        if preview_info is None:
-            if attachments:
-                text_chunks.extend(self._describe_attachment(item) for item in attachments)
-            if not text_chunks:
-                text_chunks.append("Оплата ожидается")
-            return _XlsxCell("\n\n".join(text_chunks).strip())
-
-        file_id, data, mime, caption = preview_info
-        if caption:
-            text_chunks.append(caption)
+        primary_file_id: Optional[str] = None
+        if preview_info is not None:
+            primary_file_id, _data, _mime, caption = preview_info
+            if caption:
+                text_chunks.append(caption)
 
         remaining = attachments
-        if file_id:
-            remaining = [item for item in attachments if item.file_id != file_id]
+        if primary_file_id:
+            remaining = [item for item in attachments if item.file_id != primary_file_id]
 
         if remaining:
             text_chunks.extend(self._describe_attachment(item) for item in remaining)
 
-        image = _XlsxImage(data=data, content_type=mime, description=caption)
-        text = "\n\n".join(text_chunks).strip()
-        return _XlsxCell(text, image=image)
+        if attachments and not text_chunks:
+            text_chunks.append("Фото прикреплено")
+
+        if attachments and registration_id and bot_username:
+            link_lines = ["Открыть фото оплаты"]
+            if text_chunks:
+                link_lines.append("")
+                link_lines.extend(text_chunks)
+            link_text = "\n".join(link_lines).strip()
+            link_url = f"https://t.me/{bot_username}?start=payment_{registration_id}"
+            return _XlsxCell.hyperlink(link_text, link_url)
+
+        if not text_chunks:
+            text_chunks.append("Оплата ожидается")
+
+        return _XlsxCell("\n\n".join(text_chunks).strip())
 
     def _format_registrations_preview(
         self, registrations: list[dict[str, Any]]
