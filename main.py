@@ -14,11 +14,8 @@ warning which allows the bot to start without the rate limiter.
 from __future__ import annotations
 
 import asyncio
-import base64
-import io
 import json
 import logging
-import mimetypes
 import warnings
 import os
 import random
@@ -31,11 +28,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 from xml.sax.saxutils import escape
-
-try:  # pragma: no cover - optional dependency for JPEG conversion
-    from PIL import Image
-except ModuleNotFoundError:  # pragma: no cover - pillow may be absent in tests
-    Image = None  # type: ignore[assignment]
 
 TELEGRAM_IMPORT_ERROR: ModuleNotFoundError | None = None
 
@@ -2072,9 +2064,8 @@ class ConfettiTelegramBot:
     async def _serialise_payment_media(
         self, context: ContextTypes.DEFAULT_TYPE, attachments: list[MediaAttachment]
     ) -> list[dict[str, str]]:
-        """Convert payment attachments to a JSON-friendly structure with previews."""
+        """Convert payment attachments to a JSON-friendly structure."""
 
-        bot = getattr(context, "bot", None)
         serialised: list[dict[str, str]] = []
         for attachment in attachments:
             entry: dict[str, str] = {
@@ -2082,71 +2073,8 @@ class ConfettiTelegramBot:
                 "file_id": attachment.file_id,
                 "caption": attachment.caption or "",
             }
-            if attachment.kind == "photo" and bot is not None:
-                try:
-                    telegram_file = await bot.get_file(attachment.file_id)
-                    buffer = io.BytesIO()
-                    download = getattr(telegram_file, "download_to_memory", None)
-                    if callable(download):
-                        await download(out=buffer)
-                    else:
-                        await telegram_file.download(out=buffer)  # type: ignore[attr-defined]
-                    mime = self._guess_mime_type(getattr(telegram_file, "file_path", None))
-                    entry["preview_base64"] = base64.b64encode(buffer.getvalue()).decode("ascii")
-                    if mime:
-                        entry["preview_mime"] = mime
-                except Exception as exc:  # pragma: no cover - network dependent
-                    LOGGER.debug("Не удалось скачать фото оплаты: %s", exc)
             serialised.append(entry)
         return serialised
-
-    async def _ensure_payment_previews(
-        self,
-        context: ContextTypes.DEFAULT_TYPE,
-        registrations: list[dict[str, Any]],
-    ) -> bool:
-        """Populate preview metadata for legacy payment photos."""
-
-        updated = False
-        for record in registrations:
-            if not isinstance(record, dict):
-                continue
-
-            media_payload = record.get("payment_media")
-            if not isinstance(media_payload, list) or not media_payload:
-                continue
-
-            needs_refresh = False
-            for entry in media_payload:
-                if not isinstance(entry, dict):
-                    continue
-                if entry.get("kind") != "photo":
-                    continue
-                if entry.get("preview_base64"):
-                    continue
-                needs_refresh = True
-                break
-
-            if not needs_refresh:
-                continue
-
-            attachments = self._dicts_to_attachments(media_payload)
-            if not attachments:
-                continue
-
-            record["payment_media"] = await self._serialise_payment_media(context, attachments)
-            updated = True
-
-        if updated:
-            self._storage_dirty = True
-        return updated
-
-    @staticmethod
-    def _guess_mime_type(file_path: Optional[str]) -> Optional[str]:
-        if not file_path:
-            return None
-        mime, _ = mimetypes.guess_type(file_path)
-        return mime
 
     # ------------------------------------------------------------------
     # Registration conversation
@@ -3257,12 +3185,12 @@ class ConfettiTelegramBot:
             )
             return
 
-        if await self._ensure_payment_previews(context, registrations):
-            self._save_persistent_state()
+        bot_username = await self._ensure_bot_username(context)
 
         export_path, generated_at = self._export_registrations_excel(
             context,
             registrations,
+            bot_username=bot_username,
         )
         preview_lines = self._format_registrations_preview(registrations)
         deeplink = await self._build_registrations_deeplink(context)
@@ -3277,7 +3205,7 @@ class ConfettiTelegramBot:
             message_parts.extend(preview_lines)
         message_parts.append("")
         message_parts.append(
-            "🖼 Фото подтверждения оплаты встроено в столбец «Фото оплаты» и сохраняется в формате JPG."
+            "🔗 В столбце «Фото оплаты» размещена кликабельная ссылка на подтверждение платежа."
         )
         if deeplink:
             message_parts.append("")
@@ -3306,6 +3234,8 @@ class ConfettiTelegramBot:
         self,
         context: ContextTypes.DEFAULT_TYPE,
         registrations: list[dict[str, Any]],
+        *,
+        bot_username: Optional[str] = None,
     ) -> tuple[Path, str]:
         builder = _SimpleXlsxBuilder(
             sheet_name="Заявки",
@@ -3326,9 +3256,10 @@ class ConfettiTelegramBot:
         for record in registrations:
             payment_entries = self._dicts_to_attachments(record.get("payment_media"))
             payment_note = record.get("payment_note") or ""
-            preview_info = self._extract_payment_preview(record)
-            photo_cell = self._build_payment_photo_cell(
-                preview_info=preview_info,
+            registration_id = str(record.get("id") or "")
+            photo_cell = self._build_payment_link_cell(
+                bot_username=bot_username,
+                registration_id=registration_id,
                 attachments=payment_entries,
                 payment_note=payment_note,
             )
@@ -3365,88 +3296,43 @@ class ConfettiTelegramBot:
 
         return export_path, generated_at
 
-    def _extract_payment_preview(
-        self, record: dict[str, Any]
-    ) -> Optional[tuple[Optional[str], bytes, str, str]]:
-        media_payload = record.get("payment_media")
-        if not isinstance(media_payload, list):
-            return None
-        for entry in media_payload:
-            if not isinstance(entry, dict):
-                continue
-            encoded = entry.get("preview_base64")
-            if not encoded:
-                continue
-            try:
-                data = base64.b64decode(encoded)
-            except Exception:
-                continue
-            mime = entry.get("preview_mime") or "image/jpeg"
-            caption = entry.get("caption") or ""
-            file_id = entry.get("file_id")
-            return (str(file_id) if file_id else None, data, mime, caption)
-        return None
-
-    def _ensure_jpeg_preview(self, data: bytes, mime: str) -> tuple[bytes, str]:
-        """Return image bytes and mime-type ensuring a JPEG payload when possible."""
-
-        target_mime = "image/jpeg"
-        if mime.lower() in {"image/jpeg", "image/jpg"}:
-            return data, target_mime
-
-        if Image is None:
-            LOGGER.debug("Pillow недоступен — отправляем изображение как есть (%s)", mime)
-            return data, mime or target_mime
-
-        try:
-            with Image.open(io.BytesIO(data)) as original:
-                converted = original.convert("RGB")
-                buffer = io.BytesIO()
-                converted.save(buffer, format="JPEG", quality=85)
-                return buffer.getvalue(), target_mime
-        except Exception as exc:  # pragma: no cover - depends on Pillow backend
-            LOGGER.debug("Не удалось преобразовать изображение в JPEG: %s", exc)
-            return data, mime or target_mime
-
-    def _build_payment_photo_cell(
+    def _build_payment_link_cell(
         self,
-        preview_info: Optional[tuple[Optional[str], bytes, str, str]],
+        *,
+        bot_username: Optional[str],
+        registration_id: str,
         attachments: list[MediaAttachment],
         payment_note: str,
     ) -> _XlsxCell:
-        text_chunks: list[str] = []
+        has_attachments = bool(attachments)
+        text_lines: list[str] = []
+        link_url: Optional[str] = None
+
+        if bot_username and registration_id and has_attachments:
+            link_url = f"https://t.me/{bot_username}?start=payment_{registration_id}"
+            link_label = "Открыть фото оплаты"
+            text_lines.append(link_label)
+        elif has_attachments:
+            text_lines.append("Фото оплаты доступно во вложениях бота")
+        else:
+            text_lines.append("Оплата ожидается")
+
         if payment_note:
-            text_chunks.append(payment_note)
+            text_lines.append(payment_note)
 
-        primary_file_id: Optional[str] = None
-        image: Optional[_XlsxImage] = None
-        if preview_info is not None:
-            primary_file_id, preview_bytes, preview_mime, caption = preview_info
-            jpeg_bytes, jpeg_mime = self._ensure_jpeg_preview(preview_bytes, preview_mime)
-            image_description = caption or payment_note or "Фото оплаты"
-            image = _XlsxImage(
-                data=jpeg_bytes,
-                content_type=jpeg_mime,
-                description=image_description,
-            )
-            if caption:
-                text_chunks.append(caption)
+        if has_attachments and attachments[0].caption:
+            text_lines.append(attachments[0].caption)
 
-        remaining = attachments
-        if primary_file_id:
-            remaining = [item for item in attachments if item.file_id != primary_file_id]
+        extra_attachments = attachments[1:] if has_attachments else []
+        if extra_attachments:
+            text_lines.extend(self._describe_attachment(item) for item in extra_attachments)
 
-        if remaining:
-            text_chunks.extend(self._describe_attachment(item) for item in remaining)
+        cell_text = "\n\n".join(text_lines).strip()
 
-        if attachments and not text_chunks:
-            text_chunks.append("Фото прикреплено")
+        if link_url:
+            return _XlsxCell.hyperlink(cell_text, link_url)
 
-        if not text_chunks:
-            text_chunks.append("Оплата ожидается")
-
-        cell_text = "\n\n".join(text_chunks).strip()
-        return _XlsxCell(cell_text, image=image)
+        return _XlsxCell(cell_text)
 
     def _format_registrations_preview(
         self, registrations: list[dict[str, Any]]
@@ -3515,9 +3401,11 @@ class ConfettiTelegramBot:
                     reply_markup=self._admin_menu_markup(),
                 )
                 return False
-            path, generated_at, _ = self._export_registrations_excel(
+            bot_username = await self._ensure_bot_username(context)
+            path, generated_at = self._export_registrations_excel(
                 context,
                 registrations,
+                bot_username=bot_username,
             )
 
         try:
@@ -3529,7 +3417,7 @@ class ConfettiTelegramBot:
             "📊 Таблица заявок студии «Конфетти»\n"
             f"Обновлено: {generated_at}\n"
             "Документ включает все заявки и обновляется при каждом экспорте.\n"
-            "Фото подтверждения оплаты встроено прямо в колонку «Фото оплаты» (формат JPG)."
+            "В колонке «Фото оплаты» находится ссылка на подтверждение платежа."
         )
 
         try:
