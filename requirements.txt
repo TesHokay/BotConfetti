@@ -1,3 +1,4 @@
 # Exported via `poetry export --format requirements.txt --output requirements.txt`
 python-telegram-bot==20.7
 python-dotenv==1.0.0
+Pillow==10.3.0

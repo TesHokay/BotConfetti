@@ -31,6 +31,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 from xml.sax.saxutils import escape
 
+try:  # pragma: no cover - optional dependency for JPEG conversion
+    from PIL import Image
+except ModuleNotFoundError:  # pragma: no cover - pillow may be absent in tests
+    Image = None  # type: ignore[assignment]
+
 
 TELEGRAM_IMPORT_ERROR: ModuleNotFoundError | None = None
 
@@ -3219,7 +3224,7 @@ class ConfettiTelegramBot:
             message_parts.extend(preview_lines)
         message_parts.append("")
         message_parts.append(
-            "🔍 Фото подтверждения оплаты доступно по кликабельной ссылке внутри таблицы."
+            "🖼 Фото подтверждения оплаты встроено в столбец «Фото оплаты» и сохраняется в формате JPG."
         )
         if deeplink:
             message_parts.append("")
@@ -3249,14 +3254,6 @@ class ConfettiTelegramBot:
         context: ContextTypes.DEFAULT_TYPE,
         registrations: list[dict[str, Any]],
     ) -> tuple[Path, str]:
-        bot_username = self._bot_username
-        if not bot_username:
-            bot = getattr(context, "bot", None)
-            candidate = getattr(bot, "username", None)
-            if candidate:
-                bot_username = candidate
-                self._bot_username = candidate
-
         builder = _SimpleXlsxBuilder(
             sheet_name="Заявки",
             column_widths=(
@@ -3288,8 +3285,6 @@ class ConfettiTelegramBot:
             payment_note = record.get("payment_note") or ""
             preview_info = self._extract_payment_preview(record)
             photo_cell = self._build_payment_photo_cell(
-                registration_id=str(record.get("id")) if record.get("id") is not None else None,
-                bot_username=bot_username,
                 preview_info=preview_info,
                 attachments=payment_entries,
                 payment_note=payment_note,
@@ -3353,10 +3348,29 @@ class ConfettiTelegramBot:
             return (str(file_id) if file_id else None, data, mime, caption)
         return None
 
+    def _ensure_jpeg_preview(self, data: bytes, mime: str) -> tuple[bytes, str]:
+        """Return image bytes and mime-type ensuring a JPEG payload when possible."""
+
+        target_mime = "image/jpeg"
+        if mime.lower() in {"image/jpeg", "image/jpg"}:
+            return data, target_mime
+
+        if Image is None:
+            LOGGER.debug("Pillow недоступен — отправляем изображение как есть (%s)", mime)
+            return data, mime or target_mime
+
+        try:
+            with Image.open(io.BytesIO(data)) as original:
+                converted = original.convert("RGB")
+                buffer = io.BytesIO()
+                converted.save(buffer, format="JPEG", quality=85)
+                return buffer.getvalue(), target_mime
+        except Exception as exc:  # pragma: no cover - depends on Pillow backend
+            LOGGER.debug("Не удалось преобразовать изображение в JPEG: %s", exc)
+            return data, mime or target_mime
+
     def _build_payment_photo_cell(
         self,
-        registration_id: Optional[str],
-        bot_username: Optional[str],
         preview_info: Optional[tuple[Optional[str], bytes, str, str]],
         attachments: list[MediaAttachment],
         payment_note: str,
@@ -3366,8 +3380,16 @@ class ConfettiTelegramBot:
             text_chunks.append(payment_note)
 
         primary_file_id: Optional[str] = None
+        image: Optional[_XlsxImage] = None
         if preview_info is not None:
-            primary_file_id, _data, _mime, caption = preview_info
+            primary_file_id, preview_bytes, preview_mime, caption = preview_info
+            jpeg_bytes, jpeg_mime = self._ensure_jpeg_preview(preview_bytes, preview_mime)
+            image_description = caption or payment_note or "Фото оплаты"
+            image = _XlsxImage(
+                data=jpeg_bytes,
+                content_type=jpeg_mime,
+                description=image_description,
+            )
             if caption:
                 text_chunks.append(caption)
 
@@ -3381,19 +3403,11 @@ class ConfettiTelegramBot:
         if attachments and not text_chunks:
             text_chunks.append("Фото прикреплено")
 
-        if attachments and registration_id and bot_username:
-            link_lines = ["Открыть фото оплаты"]
-            if text_chunks:
-                link_lines.append("")
-                link_lines.extend(text_chunks)
-            link_text = "\n".join(link_lines).strip()
-            link_url = f"https://t.me/{bot_username}?start=payment_{registration_id}"
-            return _XlsxCell.hyperlink(link_text, link_url)
-
         if not text_chunks:
             text_chunks.append("Оплата ожидается")
 
-        return _XlsxCell("\n\n".join(text_chunks).strip())
+        cell_text = "\n\n".join(text_chunks).strip()
+        return _XlsxCell(cell_text, image=image)
 
     def _format_registrations_preview(
         self, registrations: list[dict[str, Any]]
@@ -3476,7 +3490,7 @@ class ConfettiTelegramBot:
             "📊 Таблица заявок студии «Конфетти»\n"
             f"Обновлено: {generated_at}\n"
             "Документ включает все заявки и обновляется при каждом экспорте.\n"
-            "Фото подтверждения оплаты отображается в одноимённой колонке."
+            "Фото подтверждения оплаты встроено прямо в колонку «Фото оплаты» (формат JPG)."
         )
 
         try:
