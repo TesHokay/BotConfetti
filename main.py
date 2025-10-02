@@ -573,6 +573,7 @@ class ConfettiTelegramBot:
                 "и расширяя словарный запас."
             ),
             "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Французский каждый день»
+            "photo_url": None,
         },
         {
             "label": "🎭 Театр на французском (вечер)",
@@ -584,6 +585,7 @@ class ConfettiTelegramBot:
                 "на французском."
             ),
             "photo_file_id": None,
+            "photo_url": None,
         },
         {
             "label": "📚 Воскресный французский",
@@ -595,6 +597,7 @@ class ConfettiTelegramBot:
                 "через творчество, песни и игры, знакомимся с французскими традициями."
             ),
             "photo_file_id": None,
+            "photo_url": None,
         },
         {
             "label": "🎭 Театр на французском (воскресенье)",
@@ -605,6 +608,7 @@ class ConfettiTelegramBot:
                 "эмоциями на французском языке, совместные выступления и фестивали."
             ),
             "photo_file_id": None,
+            "photo_url": None,
         },
         {
             "label": "🇫🇷 Французский по-взрослому",
@@ -616,6 +620,7 @@ class ConfettiTelegramBot:
                 "отрабатываем разговорные ситуации и готовимся к международным экзаменам."
             ),
             "photo_file_id": None,
+            "photo_url": None,
         },
         {
             "label": "🇰🇷 Корейский язык с Ксенией Вшивковой",
@@ -628,6 +633,7 @@ class ConfettiTelegramBot:
                 "сериалы и общаться с носителями."
             ),
             "photo_file_id": None,
+            "photo_url": None,
         },
         {
             "label": "👩🏼‍🏫 Индивидуальные занятия",
@@ -640,6 +646,7 @@ class ConfettiTelegramBot:
                 "индивидуальные занятия по французскому, английскому и корейскому языкам."
             ),
             "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Индивидуальные занятия»
+            "photo_url": None,
         },
         {
             "label": "🍂 Осенний интенсив",
@@ -650,6 +657,7 @@ class ConfettiTelegramBot:
                 "театральные проекты и квесты на французском."
             ),
             "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Осенний интенсив»
+            "photo_url": None,
         },
     )
 
@@ -664,6 +672,7 @@ class ConfettiTelegramBot:
                 "Регулярно стажировалась во Франции и организовывала «русские сезоны» в Посольстве России."
             ),
             "photo_file_id": None,  # TODO: добавьте file_id фотографии Ксении Настыч
+            "photo_url": None,
         },
         {
             "key": "bannikova",
@@ -673,6 +682,7 @@ class ConfettiTelegramBot:
                 "Создаёт дружелюбную атмосферу и помогает детям полюбить французский язык через игру и творчество."
             ),
             "photo_file_id": None,  # TODO: добавьте file_id фотографии Анастасии Банниковой
+            "photo_url": None,
         },
         {
             "key": "marinot",
@@ -682,6 +692,7 @@ class ConfettiTelegramBot:
                 "Актёр и душа студии, который общается с учениками только по-французски и погружает в живую культуру."
             ),
             "photo_file_id": None,  # TODO: добавьте file_id фотографии Алена Марино
+            "photo_url": None,
         },
         {
             "key": "krasnoborova",
@@ -691,6 +702,7 @@ class ConfettiTelegramBot:
                 "Готовит подростков и взрослых к экзаменам и олимпиадам, сочетая академизм и практику."
             ),
             "photo_file_id": None,  # TODO: добавьте file_id фотографии Людмилы Красноборовой
+            "photo_url": None,
         },
         {
             "key": "vshivkova",
@@ -702,6 +714,7 @@ class ConfettiTelegramBot:
                 "а также индивидуальные уроки по французскому, английскому и корейскому языкам."
             ),
             "photo_file_id": None,  # TODO: добавьте file_id фотографии Ксении Вшивковой
+            "photo_url": None,
         },
     )
 
@@ -734,6 +747,11 @@ class ConfettiTelegramBot:
             "example_fr": "Chaque étoile brille à sa manière.",
             "example_ru": "Каждая звезда сияет по-своему.",
         },
+    )
+
+    MEDIA_DIRECTIVE_PATTERN = re.compile(
+        r"^(?P<kind>photo|video|animation|document)\s*:\s*(?P<url>https?://\S+)(?:\s*\|\s*(?P<caption>.+))?$",
+        re.IGNORECASE,
     )
 
     CONTENT_LABELS = {
@@ -2089,6 +2107,26 @@ class ConfettiTelegramBot:
         )
 
         return []
+
+    def _resolve_media_reference(
+        self,
+        payload: dict[str, Any],
+        *,
+        file_key: str,
+        url_key: str,
+    ) -> Optional[str]:
+        if not isinstance(payload, dict):
+            return None
+
+        url_value = payload.get(url_key)
+        if isinstance(url_value, str) and url_value.strip():
+            return url_value.strip()
+
+        file_value = payload.get(file_key)
+        if isinstance(file_value, str) and file_value.strip():
+            return file_value.strip()
+
+        return None
 
     async def _reply(
         self,
@@ -3588,6 +3626,33 @@ class ConfettiTelegramBot:
 
         return True
 
+    def _extract_media_directives(self, text: str) -> tuple[str, list[MediaAttachment]]:
+        if not text.strip():
+            return text.strip(), []
+
+        attachments: list[MediaAttachment] = []
+        cleaned_lines: list[str] = []
+        for raw_line in text.splitlines():
+            directive = self.MEDIA_DIRECTIVE_PATTERN.match(raw_line.strip())
+            if directive:
+                kind = directive.group("kind").lower()
+                url = directive.group("url")
+                if not url:
+                    continue
+                caption = directive.group("caption")
+                attachments.append(
+                    MediaAttachment(
+                        kind=kind,
+                        file_id=url,
+                        caption=caption.strip() if caption else None,
+                    )
+                )
+                continue
+            cleaned_lines.append(raw_line)
+
+        cleaned_text = "\n".join(cleaned_lines).strip()
+        return cleaned_text, attachments
+
     async def _admin_apply_content_update(
         self,
         update: Update,
@@ -3597,6 +3662,12 @@ class ConfettiTelegramBot:
         text: str,
         attachments: list[MediaAttachment],
     ) -> None:
+        cleaned_text, url_attachments = self._extract_media_directives(text)
+        combined_media = [
+            MediaAttachment(kind=item.kind, file_id=item.file_id, caption=item.caption)
+            for item in attachments
+        ]
+        combined_media.extend(url_attachments)
         content = self._get_content(context)
         if not hasattr(content, field):
             await self._reply(
@@ -3607,8 +3678,8 @@ class ConfettiTelegramBot:
             return
         block = getattr(content, field)
         new_block = ContentBlock(
-            text=text.strip(),
-            media=[MediaAttachment(kind=item.kind, file_id=item.file_id, caption=item.caption) for item in attachments],
+            text=cleaned_text.strip(),
+            media=combined_media,
         )
         if isinstance(block, ContentBlock):
             block.text = new_block.text
@@ -3624,7 +3695,7 @@ class ConfettiTelegramBot:
         await self._notify_admins(
             context,
             f"🛠 Раздел «{label}» был обновлён администратором.",
-            media=attachments or None,
+            media=combined_media or None,
         )
         self._save_persistent_state()
 
@@ -3853,9 +3924,13 @@ class ConfettiTelegramBot:
         await query.answer()
         caption = f"{teacher['name']}\n\n{teacher['description']}"
         keyboard = self._teacher_inline_keyboard()
-        photo_id = teacher.get("photo_file_id")
+        photo_reference = self._resolve_media_reference(
+            teacher,
+            file_key="photo_file_id",
+            url_key="photo_url",
+        )
 
-        if photo_id:
+        if photo_reference:
             await self._reply(
                 update,
                 text=None,
@@ -3863,7 +3938,7 @@ class ConfettiTelegramBot:
                 media=[
                     MediaAttachment(
                         kind="photo",
-                        file_id=photo_id,
+                        file_id=photo_reference,
                         caption=caption,
                     )
                 ],
@@ -3910,8 +3985,12 @@ class ConfettiTelegramBot:
         await query.answer()
 
         overview = self._format_program_details(program)
-        photo_id = program.get("photo_file_id")
-        if photo_id:
+        photo_reference = self._resolve_media_reference(
+            program,
+            file_key="photo_file_id",
+            url_key="photo_url",
+        )
+        if photo_reference:
             await self._reply(
                 update,
                 text=None,
@@ -3919,7 +3998,7 @@ class ConfettiTelegramBot:
                 media=[
                     MediaAttachment(
                         kind="photo",
-                        file_id=photo_id,
+                        file_id=photo_reference,
                         caption=overview,
                     )
                 ],
