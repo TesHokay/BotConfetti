@@ -2,3 +2,5 @@
 python-telegram-bot==20.7
 python-dotenv==1.0.0
 Pillow==10.3.0
+gspread==5.11.2
+google-auth==2.30.0
