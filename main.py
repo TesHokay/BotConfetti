@@ -42,6 +42,8 @@ _GOOGLE_SERVICE_ACCOUNT_AVAILABLE = _module_available("google.oauth2.service_acc
 _GOOGLE_DISCOVERY_AVAILABLE = _module_available("googleapiclient.discovery")
 _GOOGLE_HTTP_AVAILABLE = _module_available("googleapiclient.http")
 
+_DEFAULT_DRIVE_FOLDER_ID = "1HQVWX3p41u2x2KHInWg__cX0LgqHgEBW"
+
 if (
     _GOOGLE_SERVICE_ACCOUNT_AVAILABLE
     and _GOOGLE_DISCOVERY_AVAILABLE
@@ -4152,7 +4154,7 @@ class _DriveExportPublisher:
 
     @classmethod
     def from_env(cls) -> Optional["_DriveExportPublisher"]:
-        folder_id = os.environ.get("CONFETTI_EXPORT_DRIVE_FOLDER_ID")
+        folder_id = os.environ.get("CONFETTI_EXPORT_DRIVE_FOLDER_ID") or _DEFAULT_DRIVE_FOLDER_ID
         if not folder_id:
             return None
 

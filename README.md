@@ -100,7 +100,7 @@ poetry run confetti-bot
    - либо в переменной `CONFETTI_GOOGLE_SERVICE_ACCOUNT_JSON` (строгое JSON-содержимое файла);
    - либо укажите путь к файлу в `CONFETTI_GOOGLE_SERVICE_ACCOUNT_FILE`.
 2. Поделитесь папкой Google Drive с адресом сервисного аккаунта (почта вида `…@…iam.gserviceaccount.com`).
-3. Выпишите идентификатор папки (часть URL после `/folders/`). Для примера выше это `1HQVWX3p41u2x2KHInWg__cX0LgqHgEBW`.
+3. Выпишите идентификатор папки (часть URL после `/folders/`). Для примера выше это `1HQVWX3p41u2x2KHInWg__cX0LgqHgEBW`. Если переменная не указана, бот автоматически использует эту папку по умолчанию.
 4. Пропишите переменные окружения:
    ```env
    CONFETTI_EXPORT_DRIVE_FOLDER_ID=1HQVWX3p41u2x2KHInWg__cX0LgqHgEBW
