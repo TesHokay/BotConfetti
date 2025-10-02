@@ -572,7 +572,7 @@ class ConfettiTelegramBot:
                 "в язык через общение, игры и проекты, закрепляя школьную программу "
                 "и расширяя словарный запас."
             ),
-            "photo_file_id": "AgACAgIAAxkBAAECDM5o3YPwhxLEXvjGrdhRv-I-_9vjfwACq_8xG3Ro6Er-VzCddEI54QEAAwIAA3kAAzYE",
+            "photo_file_id": None,  # TODO: добавьте file_id изображения направления «Французский каждый день»
         },
         {
             "label": "🎭 Театр на французском (вечер)",
@@ -2184,9 +2184,11 @@ class ConfettiTelegramBot:
         if media and target is not None:
             for index, attachment in enumerate(media):
                 extra: dict[str, Any] = {}
-                if not markup_used and reply_markup is not None and index == 0:
+                should_attach_markup = (
+                    not markup_used and reply_markup is not None and index == 0
+                )
+                if should_attach_markup:
                     extra["reply_markup"] = reply_markup
-                    markup_used = True
                 if attachment.caption:
                     extra["caption"] = attachment.caption
                 try:
@@ -2204,6 +2206,24 @@ class ConfettiTelegramBot:
                         LOGGER.debug("Unsupported media type %s", attachment.kind)
                 except Exception as exc:  # pragma: no cover - network dependent
                     LOGGER.warning("Failed to reply with media %s: %s", attachment.kind, exc)
+                    if attachment.caption:
+                        fallback_kwargs: dict[str, Any] = {}
+                        if should_attach_markup and reply_markup is not None:
+                            fallback_kwargs["reply_markup"] = reply_markup
+                        try:
+                            await target.reply_text(attachment.caption, **fallback_kwargs)
+                        except Exception as text_exc:  # pragma: no cover - network dependent
+                            LOGGER.warning(
+                                "Failed to send fallback text for media %s: %s",
+                                attachment.kind,
+                                text_exc,
+                            )
+                        else:
+                            if should_attach_markup:
+                                markup_used = True
+                    continue
+                if should_attach_markup:
+                    markup_used = True
         elif reply_markup is not None and not markup_used and target is not None:
             await target.reply_text("", reply_markup=reply_markup)
 
@@ -3711,17 +3731,6 @@ class ConfettiTelegramBot:
             media.append(
                 MediaAttachment(kind=first.kind, file_id=first.file_id, caption=message)
             )
-        else:
-            fallback_photo = next(
-                (
-                    program.get("photo_file_id")
-                    for program in self.PROGRAMS
-                    if program.get("photo_file_id")
-                ),
-                None,
-            )
-            if fallback_photo:
-                media.append(MediaAttachment(kind="photo", file_id=fallback_photo, caption=message))
 
         if media:
             await self._reply(
@@ -3802,17 +3811,6 @@ class ConfettiTelegramBot:
             media.append(
                 MediaAttachment(kind=first.kind, file_id=first.file_id, caption=intro)
             )
-        else:
-            fallback_photo = next(
-                (
-                    teacher.get("photo_file_id")
-                    for teacher in self.TEACHERS
-                    if teacher.get("photo_file_id")
-                ),
-                None,
-            )
-            if fallback_photo:
-                media.append(MediaAttachment(kind="photo", file_id=fallback_photo, caption=intro))
 
         if media:
             await self._reply(
