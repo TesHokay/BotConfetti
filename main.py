@@ -2092,6 +2092,47 @@ class ConfettiTelegramBot:
             serialised.append(entry)
         return serialised
 
+    async def _ensure_payment_previews(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        registrations: list[dict[str, Any]],
+    ) -> bool:
+        """Populate preview metadata for legacy payment photos."""
+
+        updated = False
+        for record in registrations:
+            if not isinstance(record, dict):
+                continue
+
+            media_payload = record.get("payment_media")
+            if not isinstance(media_payload, list) or not media_payload:
+                continue
+
+            needs_refresh = False
+            for entry in media_payload:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("kind") != "photo":
+                    continue
+                if entry.get("preview_base64"):
+                    continue
+                needs_refresh = True
+                break
+
+            if not needs_refresh:
+                continue
+
+            attachments = self._dicts_to_attachments(media_payload)
+            if not attachments:
+                continue
+
+            record["payment_media"] = await self._serialise_payment_media(context, attachments)
+            updated = True
+
+        if updated:
+            self._storage_dirty = True
+        return updated
+
     @staticmethod
     def _guess_mime_type(file_path: Optional[str]) -> Optional[str]:
         if not file_path:
@@ -3207,6 +3248,9 @@ class ConfettiTelegramBot:
                 reply_markup=self._admin_menu_markup(),
             )
             return
+
+        if await self._ensure_payment_previews(context, registrations):
+            self._save_persistent_state()
 
         export_path, generated_at = self._export_registrations_excel(
             context,
