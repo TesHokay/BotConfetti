@@ -3427,6 +3427,10 @@ class ConfettiTelegramBot:
                     document=handle,
                     filename=path.name,
                     caption=caption,
+                    read_timeout=120,
+                    write_timeout=120,
+                    connect_timeout=30,
+                    pool_timeout=30,
                 )
         except Exception as exc:  # pragma: no cover - network dependent
             LOGGER.warning("Не удалось отправить таблицу заявок: %s", exc)
