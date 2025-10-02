@@ -14,13 +14,15 @@ warning which allows the bot to start without the rate limiter.
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
 import logging
+import mimetypes
 import warnings
 import os
 import random
 import re
-import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -550,7 +552,6 @@ class ConfettiTelegramBot:
             self._runtime_admin_ids.update(dynamic_admins)
         self._storage_dirty = False
         self._bot_username: Optional[str] = None
-        self._cloud_publisher: Optional[_CloudExportPublisher] = _CloudExportPublisher.from_env()
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -1380,6 +1381,14 @@ class ConfettiTelegramBot:
         record_id = data.get("id") or self._generate_registration_id()
         program_label = data.get("program", "")
         teacher = data.get("teacher") or self._resolve_program_teacher(str(program_label))
+        stored_media = data.get("payment_media", [])
+        if attachments and stored_media:
+            payment_media = stored_media
+        elif attachments:
+            payment_media = self._attachments_to_dicts(attachments)
+        else:
+            payment_media = stored_media
+
         record = {
             "id": record_id,
             "program": program_label,
@@ -1394,9 +1403,7 @@ class ConfettiTelegramBot:
             "submitted_by_id": getattr(user, "id", None) if user else None,
             "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
             "payment_note": data.get("payment_note", ""),
-            "payment_media": self._attachments_to_dicts(attachments or [])
-            if attachments
-            else data.get("payment_media", []),
+            "payment_media": payment_media,
         }
         registrations = self._application_data(context).setdefault("registrations", [])
         needs_save = False
@@ -2048,6 +2055,44 @@ class ConfettiTelegramBot:
             attachments.append(MediaAttachment(kind=kind, file_id=file_id, caption=caption))
         return attachments
 
+    async def _serialise_payment_media(
+        self, context: ContextTypes.DEFAULT_TYPE, attachments: list[MediaAttachment]
+    ) -> list[dict[str, str]]:
+        """Convert payment attachments to a JSON-friendly structure with previews."""
+
+        bot = getattr(context, "bot", None)
+        serialised: list[dict[str, str]] = []
+        for attachment in attachments:
+            entry: dict[str, str] = {
+                "kind": attachment.kind,
+                "file_id": attachment.file_id,
+                "caption": attachment.caption or "",
+            }
+            if attachment.kind == "photo" and bot is not None:
+                try:
+                    telegram_file = await bot.get_file(attachment.file_id)
+                    buffer = io.BytesIO()
+                    download = getattr(telegram_file, "download_to_memory", None)
+                    if callable(download):
+                        await download(out=buffer)
+                    else:
+                        await telegram_file.download(out=buffer)  # type: ignore[attr-defined]
+                    mime = self._guess_mime_type(getattr(telegram_file, "file_path", None))
+                    entry["preview_base64"] = base64.b64encode(buffer.getvalue()).decode("ascii")
+                    if mime:
+                        entry["preview_mime"] = mime
+                except Exception as exc:  # pragma: no cover - network dependent
+                    LOGGER.debug("Не удалось скачать фото оплаты: %s", exc)
+            serialised.append(entry)
+        return serialised
+
+    @staticmethod
+    def _guess_mime_type(file_path: Optional[str]) -> Optional[str]:
+        if not file_path:
+            return None
+        mime, _ = mimetypes.guess_type(file_path)
+        return mime
+
     # ------------------------------------------------------------------
     # Registration conversation
 
@@ -2527,7 +2572,7 @@ class ConfettiTelegramBot:
             return ConversationHandler.END
 
         if attachments:
-            data["payment_media"] = self._attachments_to_dicts(attachments)
+            data["payment_media"] = await self._serialise_payment_media(context, attachments)
         if text:
             data["payment_note"] = text
 
@@ -3157,11 +3202,9 @@ class ConfettiTelegramBot:
             )
             return
 
-        bot_username = await self._ensure_bot_username(context)
-        export_path, generated_at, export_url = self._export_registrations_excel(
+        export_path, generated_at = self._export_registrations_excel(
             context,
             registrations,
-            bot_username=bot_username,
         )
         preview_lines = self._format_registrations_preview(registrations)
         deeplink = await self._build_registrations_deeplink(context)
@@ -3175,80 +3218,48 @@ class ConfettiTelegramBot:
             message_parts.append("")
             message_parts.extend(preview_lines)
         message_parts.append("")
-        if bot_username:
-            message_parts.append(
-                "🔍 В колонке «Комментарий оплаты» появится ссылка, чтобы открыть подтверждение прямо в боте."
-            )
-            message_parts.append(
-                "Она работает только для администраторов с доступом к панели."
-            )
-        else:
-            message_parts.append(
-                "ℹ️ В колонке «Комментарий оплаты» указаны типы вложений. Чтобы получать ссылку, задайте имя пользователя боту."
-            )
-        if export_url:
-            message_parts.append("")
-            message_parts.append(f"🌐 Облачная таблица: {export_url}")
-            message_parts.append(
-                "Ссылка не меняется — файл обновляется автоматически после каждой выгрузки."
-            )
-            if deeplink:
-                message_parts.append("")
-                message_parts.append(f"🤖 Нужна копия из бота? {deeplink}")
-        elif deeplink:
+        message_parts.append(
+            "🔍 Фото подтверждения оплаты встроено в отдельную колонку таблицы."
+        )
+        if deeplink:
             message_parts.append("")
             message_parts.append(f"🔗 Таблица: {deeplink}")
             message_parts.append(
                 "Нажмите ссылку, чтобы в любой момент получить свежую версию."
             )
-        else:
-            message_parts.append("")
-            message_parts.append(
-                "🔽 Файл с таблицей отправлен ниже. Сохраните его в облаке Telegram для быстрого доступа."
-            )
+        message_parts.append("")
+        message_parts.append(
+            "🔽 Файл с таблицей отправлен ниже. Сохраните его в «Избранном» для быстрого доступа."
+        )
 
         await self._reply(
             update,
             "\n".join(message_parts),
             reply_markup=self._admin_menu_markup(),
         )
-        if not export_url:
-            await self._send_registrations_excel(
-                update,
-                context,
-                path=export_path,
-                generated_at=generated_at,
-                bot_username=bot_username,
-            )
-
-    def _publish_cloud_export(self, path: Path) -> Optional[str]:
-        publisher = getattr(self, "_cloud_publisher", None)
-        if publisher is None:
-            return None
-        try:
-            return publisher.publish(path)
-        except Exception as exc:  # pragma: no cover - depends on filesystem/remote
-            LOGGER.warning("Не удалось обновить облачную копию таблицы: %s", exc)
-            return None
+        await self._send_registrations_excel(
+            update,
+            context,
+            path=export_path,
+            generated_at=generated_at,
+        )
 
     def _export_registrations_excel(
         self,
         context: ContextTypes.DEFAULT_TYPE,
         registrations: list[dict[str, Any]],
-        *,
-        bot_username: Optional[str] = None,
-    ) -> tuple[Path, str, Optional[str]]:
+    ) -> tuple[Path, str]:
         builder = _SimpleXlsxBuilder(
             sheet_name="Заявки",
             column_widths=(
                 20,
                 36,
-                34,
                 30,
                 22,
                 18,
                 26,
                 42,
+                24,
                 28,
             ),
         )
@@ -3256,48 +3267,54 @@ class ConfettiTelegramBot:
             (
                 "Дата заявки",
                 "Программа",
-                "Преподаватель",
                 "Участник",
                 "Класс / возраст",
                 "Телефон",
                 "Предпочтительное время",
                 "Комментарий оплаты",
+                "Фото оплаты",
                 "Отправитель",
             )
         )
 
         for record in registrations:
             payment_entries = self._dicts_to_attachments(record.get("payment_media"))
-            registration_id = str(record.get("id") or "")
             payment_note = record.get("payment_note") or ""
-            teacher_name = record.get("teacher") or self._resolve_program_teacher(str(record.get("program", "")))
+            preview_info = self._extract_payment_preview(record)
 
             comment_lines: list[str] = []
             if payment_note:
                 comment_lines.append(payment_note)
 
-            if payment_entries:
-                if bot_username and registration_id:
-                    link = f"https://t.me/{bot_username}?start=payment_{registration_id}"
-                    comment_lines.append(f"Ссылка на подтверждение оплаты: {link}")
-                else:
-                    comment_lines.extend(self._describe_attachment(item) for item in payment_entries)
-            elif not payment_note:
+            if preview_info is not None:
+                comment_lines.append("Фото оплаты встроено в таблицу ниже.")
+
+            described_entries = payment_entries
+            if preview_info is not None and preview_info[0]:
+                described_entries = [
+                    item for item in payment_entries if item.file_id != preview_info[0]
+                ]
+
+            if described_entries:
+                comment_lines.extend(self._describe_attachment(item) for item in described_entries)
+
+            if not comment_lines:
                 comment_lines.append("Оплата ожидается")
 
             comment_text = "\n\n".join(comment_lines).strip()
             comment_cell = _XlsxCell(comment_text) if comment_text else _XlsxCell("")
+            photo_cell = self._build_payment_photo_cell(preview_info)
 
             builder.add_row(
                 (
                     record.get("created_at") or "",
                     record.get("program") or "",
-                    teacher_name or "",
                     record.get("child_name") or "",
                     record.get("class") or "",
                     record.get("phone") or "",
                     record.get("time") or "",
                     comment_cell,
+                    photo_cell,
                     record.get("submitted_by") or "",
                 )
             )
@@ -3305,7 +3322,6 @@ class ConfettiTelegramBot:
         generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
         export_path = Path("data") / "exports" / "confetti_registrations.xlsx"
         builder.to_file(export_path)
-        export_url = self._publish_cloud_export(export_path)
 
         storage = self._application_data(context)
         exports_meta = storage.setdefault("exports", {})
@@ -3313,20 +3329,49 @@ class ConfettiTelegramBot:
             exports_meta["registrations"] = {
                 "generated_at": generated_at,
                 "path": str(export_path),
-                "url": export_url,
             }
         else:
             storage["exports"] = {
                 "registrations": {
                     "generated_at": generated_at,
                     "path": str(export_path),
-                    "url": export_url,
                 }
             }
 
         self._save_persistent_state()
 
-        return export_path, generated_at, export_url
+        return export_path, generated_at
+
+    def _extract_payment_preview(
+        self, record: dict[str, Any]
+    ) -> Optional[tuple[Optional[str], bytes, str, str]]:
+        media_payload = record.get("payment_media")
+        if not isinstance(media_payload, list):
+            return None
+        for entry in media_payload:
+            if not isinstance(entry, dict):
+                continue
+            encoded = entry.get("preview_base64")
+            if not encoded:
+                continue
+            try:
+                data = base64.b64decode(encoded)
+            except Exception:
+                continue
+            mime = entry.get("preview_mime") or "image/jpeg"
+            caption = entry.get("caption") or ""
+            file_id = entry.get("file_id")
+            return (str(file_id) if file_id else None, data, mime, caption)
+        return None
+
+    def _build_payment_photo_cell(
+        self, preview_info: Optional[tuple[Optional[str], bytes, str, str]]
+    ) -> _XlsxCell:
+        if preview_info is None:
+            return _XlsxCell("")
+        _, data, mime, caption = preview_info
+        image = _XlsxImage(data=data, content_type=mime, description=caption)
+        return _XlsxCell("", image=image)
 
     def _format_registrations_preview(
         self, registrations: list[dict[str, Any]]
@@ -3380,7 +3425,6 @@ class ConfettiTelegramBot:
         *,
         path: Optional[Path] = None,
         generated_at: Optional[str] = None,
-        bot_username: Optional[str] = None,
     ) -> bool:
         chat = update.effective_chat
         if chat is None:
@@ -3388,8 +3432,6 @@ class ConfettiTelegramBot:
 
         await self._purge_expired_registrations(context)
         registrations = self._application_data(context).get("registrations", [])
-        if bot_username is None:
-            bot_username = await self._ensure_bot_username(context)
         if path is None or generated_at is None:
             if not isinstance(registrations, list) or not registrations:
                 await self._reply(
@@ -3398,10 +3440,9 @@ class ConfettiTelegramBot:
                     reply_markup=self._admin_menu_markup(),
                 )
                 return False
-            path, generated_at, _ = self._export_registrations_excel(
+            path, generated_at = self._export_registrations_excel(
                 context,
                 registrations,
-                bot_username=bot_username,
             )
 
         try:
@@ -3413,7 +3454,7 @@ class ConfettiTelegramBot:
             "📊 Таблица заявок студии «Конфетти»\n"
             f"Обновлено: {generated_at}\n"
             "Документ включает все заявки и обновляется при каждом экспорте.\n"
-            "Ссылки в колонке «Комментарий оплаты» открывают вложения прямо в боте."
+            "Фото подтверждения оплаты отображается в одноимённой колонке."
         )
 
         try:
@@ -3924,9 +3965,26 @@ class AdminProfile(UserProfile):
 
 
 @dataclass
+class _XlsxImage:
+    data: bytes
+    content_type: str
+    description: str = ""
+
+    @property
+    def extension(self) -> str:
+        mapping = {
+            "image/jpeg": "jpeg",
+            "image/jpg": "jpeg",
+            "image/png": "png",
+        }
+        return mapping.get(self.content_type.lower(), "bin")
+
+
+@dataclass
 class _XlsxCell:
     text: str = ""
     formula: Optional[str] = None
+    image: Optional[_XlsxImage] = None
 
     @classmethod
     def hyperlink(cls, text: str, url: str) -> "_XlsxCell":
@@ -3948,6 +4006,7 @@ class _SimpleXlsxBuilder:
         self.sheet_name = self._sanitise_sheet_name(sheet_name)
         self.rows: list[list[_XlsxCell]] = []
         self.column_widths: list[float] = [float(width) for width in column_widths] if column_widths else []
+        self._image_anchors: list[tuple[int, int, _XlsxImage]] = []
 
     def add_row(self, values: Iterable[Any]) -> None:
         row: list[_XlsxCell] = []
@@ -3957,16 +4016,27 @@ class _SimpleXlsxBuilder:
 
     def to_file(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        sheet_xml = self._sheet()
         with ZipFile(path, "w", ZIP_DEFLATED) as archive:
             archive.writestr("[Content_Types].xml", self._content_types())
             archive.writestr("_rels/.rels", self._rels_root())
             archive.writestr("xl/workbook.xml", self._workbook())
             archive.writestr("xl/_rels/workbook.xml.rels", self._workbook_rels())
             archive.writestr("xl/styles.xml", self._styles())
-            archive.writestr("xl/worksheets/sheet1.xml", self._sheet())
+            archive.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+            if self._image_anchors:
+                archive.writestr("xl/worksheets/_rels/sheet1.xml.rels", self._sheet_rels())
+                archive.writestr("xl/drawings/drawing1.xml", self._drawing())
+                archive.writestr("xl/drawings/_rels/drawing1.xml.rels", self._drawing_rels())
+                for index, (_, _, image) in enumerate(self._image_anchors, start=1):
+                    archive.writestr(
+                        f"xl/media/image{index}.{image.extension}",
+                        image.data,
+                    )
 
     def _sheet(self) -> str:
         rows_xml: list[str] = []
+        image_anchors: list[tuple[int, int, _XlsxImage]] = []
         for row_index, row in enumerate(self.rows, start=1):
             cells: list[str] = []
             for column_index, value in enumerate(row):
@@ -3983,6 +4053,8 @@ class _SimpleXlsxBuilder:
                     cells.append(
                         f'<c r="{cell_reference}" t="inlineStr"{style_attr}><is><t>{text}</t></is></c>'
                     )
+                if value.image is not None and row_index > 1:
+                    image_anchors.append((row_index - 1, column_index, value.image))
             rows_xml.append(f'<row r="{row_index}">{"".join(cells)}</row>')
 
         sheet_data = "".join(rows_xml)
@@ -3994,11 +4066,15 @@ class _SimpleXlsxBuilder:
                     f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
                 )
             cols_xml = f"<cols>{''.join(col_parts)}</cols>"
+        drawing_ref = ""
+        if image_anchors:
+            drawing_ref = '<drawing r:id="rId1"/>'
+        self._image_anchors = image_anchors
         return (
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
             "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" "
             "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
-            f"{cols_xml}<sheetData>{sheet_data}</sheetData>"
+            f"{cols_xml}<sheetData>{sheet_data}</sheetData>{drawing_ref}"
             "</worksheet>"
         )
 
@@ -4013,17 +4089,91 @@ class _SimpleXlsxBuilder:
             "</workbook>"
         )
 
-    @staticmethod
-    def _content_types() -> str:
+    def _content_types(self) -> str:
+        defaults: dict[str, str] = {
+            "rels": "application/vnd.openxmlformats-package.relationships+xml",
+            "xml": "application/xml",
+        }
+        overrides: list[tuple[str, str]] = [
+            ("/xl/workbook.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"),
+            ("/xl/worksheets/sheet1.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"),
+            ("/xl/styles.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"),
+        ]
+        if self._image_anchors:
+            overrides.append(
+                ("/xl/drawings/drawing1.xml", "application/vnd.openxmlformats-officedocument.drawing+xml")
+            )
+            for _, _, image in self._image_anchors:
+                defaults.setdefault(image.extension, image.content_type)
+
+        parts = [
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">",
+        ]
+        for extension, content_type in defaults.items():
+            parts.append(
+                f'<Default Extension="{escape(extension)}" ContentType="{escape(content_type)}"/>'
+            )
+        for part_name, content_type in overrides:
+            parts.append(
+                f'<Override PartName="{escape(part_name)}" ContentType="{escape(content_type)}"/>'
+            )
+        parts.append("</Types>")
+        return "".join(parts)
+
+    def _sheet_rels(self) -> str:
         return (
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
-            "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
-            "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
-            "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
-            "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
-            "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
-            "</Types>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing\" Target=\"../drawings/drawing1.xml\"/>"
+            "</Relationships>"
+        )
+
+    def _drawing(self) -> str:
+        anchors: list[str] = []
+        for index, (row, column, image) in enumerate(self._image_anchors, start=1):
+            description = escape(image.description or f"Фото оплаты {index}")
+            anchors.append(
+                "<xdr:twoCellAnchor>"
+                f"<xdr:from><xdr:col>{column}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>"
+                f"<xdr:to><xdr:col>{column + 1}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{row + 1}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>"
+                "<xdr:pic>"
+                "<xdr:nvPicPr>"
+                f"<xdr:cNvPr id=\"{index}\" name=\"Image {index}\" descr=\"{description}\"/>"
+                "<xdr:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></xdr:cNvPicPr>"
+                "</xdr:nvPicPr>"
+                "<xdr:blipFill>"
+                f"<a:blip r:embed=\"rId{index}\"/>"
+                "<a:stretch><a:fillRect/></a:stretch>"
+                "</xdr:blipFill>"
+                "<xdr:spPr>"
+                "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>"
+                "</xdr:spPr>"
+                "</xdr:pic>"
+                "<xdr:clientData/>"
+                "</xdr:twoCellAnchor>"
+            )
+
+        return (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            "<xdr:wsDr xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" "
+            "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
+            "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+            f"{''.join(anchors)}"
+            "</xdr:wsDr>"
+        )
+
+    def _drawing_rels(self) -> str:
+        relationships: list[str] = []
+        for index, (_, _, image) in enumerate(self._image_anchors, start=1):
+            relationships.append(
+                f'<Relationship Id="rId{index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image{index}.{image.extension}"/>'
+            )
+        return (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            f"{''.join(relationships)}"
+            "</Relationships>"
         )
 
     @staticmethod
@@ -4086,42 +4236,11 @@ class _SimpleXlsxBuilder:
     def _normalise_cell(value: Any) -> _XlsxCell:
         if isinstance(value, _XlsxCell):
             return value
+        if isinstance(value, _XlsxImage):
+            return _XlsxCell("", image=value)
         if value is None:
             return _XlsxCell("")
         return _XlsxCell(str(value))
-
-
-class _CloudExportPublisher:
-    """Mirror generated exports into a directory exposed through the cloud."""
-
-    def __init__(self, *, target_dir: Path, base_url: str, filename: Optional[str] = None) -> None:
-        self._target_dir = target_dir.expanduser()
-        self._base_url = base_url.rstrip("/")
-        self._filename = filename
-
-    @classmethod
-    def from_env(cls) -> Optional["_CloudExportPublisher"]:
-        """Configure the publisher from environment variables."""
-
-        base_url = os.environ.get("CONFETTI_EXPORT_CLOUD_URL")
-        target_dir = os.environ.get("CONFETTI_EXPORT_CLOUD_DIR")
-        if not base_url or not target_dir:
-            return None
-
-        filename = os.environ.get("CONFETTI_EXPORT_CLOUD_FILENAME") or None
-        return cls(target_dir=Path(target_dir), base_url=base_url, filename=filename)
-
-    def publish(self, source_path: Path) -> str:
-        """Copy the export into the target directory and return the public URL."""
-
-        if not source_path.exists():
-            raise FileNotFoundError(source_path)
-
-        target_name = self._filename or source_path.name
-        target_path = self._target_dir / target_name
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, target_path)
-        return f"{self._base_url}/{target_name}"
 
 
 def _normalise_admin_chat_ids(chat_ids: AdminChatIdsInput) -> frozenset[int]:
