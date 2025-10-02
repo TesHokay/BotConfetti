@@ -9,11 +9,11 @@ WELCOME_MESSAGE = (
 )
 
 MENU_LABELS = {
-    "about": "\U0001F4DA О студии / À propos",
-    "teachers": "\U0001F9D1\u200d\U0001F3EB Преподаватели / Enseignants",
-    "schedule": "\U0001F4C5 Расписание / Horaires",
-    "book": "\U0001F58C\uFE0F Записаться / Réserver",
-    "contacts": "\U0001F4E9 Контакты / Contacts",
+    "about": "\U0001F4DA О студии",
+    "teachers": "\U0001F9D1\u200d\U0001F3EB Преподаватели",
+    "schedule": "\U0001F4C5 Расписание",
+    "book": "\U0001F58C\uFE0F Записаться",
+    "contacts": "\U0001F4E9 Контакты",
 }
 
 ADMIN_PANEL_TITLE = "\U0001F9D1\u200d\U0001F3EB Панель администратора"
@@ -28,19 +28,16 @@ ADMIN_MENU_LABELS = {
 }
 
 BOOKING_PROMPTS = {
-    "full_name": "Напишите, пожалуйста, ваше полное имя / Indiquez votre nom complet",
-    "contact": "Оставьте телефон или @username для связи / Donnez un téléphone ou un @username",
+    "full_name": "Напишите, пожалуйста, ваше полное имя",
+    "contact": "Оставьте телефон или @username для связи",
     "preferred_date": (
         "Укажите желаемую дату пробного урока (формат ДД.ММ.ГГГГ)\n"
-        "Indiquez la date souhaitée (JJ.MM.AAAA)"
     ),
     "notes": (
         "Есть ли пожелания к уроку? Напишите их или отправьте — если нет.\n"
-        "Avez-vous des souhaits? Écrivez-les ou envoyez — si non."
     ),
     "payment": (
         "Отправьте, пожалуйста, скриншот оплаты.\n"
-        "Envoyez une capture d'écran du paiement, s'il vous plaît."
     ),
 }
 
@@ -52,7 +49,6 @@ BOOKING_CONFIRMATION = (
 
 BROADCAST_PROMPT = (
     "Отправьте сообщение для рассылки всем студентам.\n"
-    "Send the broadcast message (текст/фото/видео)."
 )
 
 EDIT_PROMPT_TEMPLATE = "Отправьте новый текст для раздела: {section}."
