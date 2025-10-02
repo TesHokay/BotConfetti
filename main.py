@@ -20,6 +20,7 @@ import warnings
 import os
 import random
 import re
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -549,6 +550,7 @@ class ConfettiTelegramBot:
             self._runtime_admin_ids.update(dynamic_admins)
         self._storage_dirty = False
         self._bot_username: Optional[str] = None
+        self._cloud_publisher: Optional[_CloudExportPublisher] = _CloudExportPublisher.from_env()
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -3156,7 +3158,7 @@ class ConfettiTelegramBot:
             return
 
         bot_username = await self._ensure_bot_username(context)
-        export_path, generated_at = self._export_registrations_excel(
+        export_path, generated_at, export_url = self._export_registrations_excel(
             context,
             registrations,
             bot_username=bot_username,
@@ -3184,7 +3186,16 @@ class ConfettiTelegramBot:
             message_parts.append(
                 "ℹ️ В колонке «Комментарий оплаты» указаны типы вложений. Чтобы получать ссылку, задайте имя пользователя боту."
             )
-        if deeplink:
+        if export_url:
+            message_parts.append("")
+            message_parts.append(f"🌐 Облачная таблица: {export_url}")
+            message_parts.append(
+                "Ссылка не меняется — файл обновляется автоматически после каждой выгрузки."
+            )
+            if deeplink:
+                message_parts.append("")
+                message_parts.append(f"🤖 Нужна копия из бота? {deeplink}")
+        elif deeplink:
             message_parts.append("")
             message_parts.append(f"🔗 Таблица: {deeplink}")
             message_parts.append(
@@ -3201,13 +3212,24 @@ class ConfettiTelegramBot:
             "\n".join(message_parts),
             reply_markup=self._admin_menu_markup(),
         )
-        await self._send_registrations_excel(
-            update,
-            context,
-            path=export_path,
-            generated_at=generated_at,
-            bot_username=bot_username,
-        )
+        if not export_url:
+            await self._send_registrations_excel(
+                update,
+                context,
+                path=export_path,
+                generated_at=generated_at,
+                bot_username=bot_username,
+            )
+
+    def _publish_cloud_export(self, path: Path) -> Optional[str]:
+        publisher = getattr(self, "_cloud_publisher", None)
+        if publisher is None:
+            return None
+        try:
+            return publisher.publish(path)
+        except Exception as exc:  # pragma: no cover - depends on filesystem/remote
+            LOGGER.warning("Не удалось обновить облачную копию таблицы: %s", exc)
+            return None
 
     def _export_registrations_excel(
         self,
@@ -3215,7 +3237,7 @@ class ConfettiTelegramBot:
         registrations: list[dict[str, Any]],
         *,
         bot_username: Optional[str] = None,
-    ) -> tuple[Path, str]:
+    ) -> tuple[Path, str, Optional[str]]:
         builder = _SimpleXlsxBuilder(
             sheet_name="Заявки",
             column_widths=(
@@ -3283,6 +3305,7 @@ class ConfettiTelegramBot:
         generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
         export_path = Path("data") / "exports" / "confetti_registrations.xlsx"
         builder.to_file(export_path)
+        export_url = self._publish_cloud_export(export_path)
 
         storage = self._application_data(context)
         exports_meta = storage.setdefault("exports", {})
@@ -3290,18 +3313,20 @@ class ConfettiTelegramBot:
             exports_meta["registrations"] = {
                 "generated_at": generated_at,
                 "path": str(export_path),
+                "url": export_url,
             }
         else:
             storage["exports"] = {
                 "registrations": {
                     "generated_at": generated_at,
                     "path": str(export_path),
+                    "url": export_url,
                 }
             }
 
         self._save_persistent_state()
 
-        return export_path, generated_at
+        return export_path, generated_at, export_url
 
     def _format_registrations_preview(
         self, registrations: list[dict[str, Any]]
@@ -3373,7 +3398,7 @@ class ConfettiTelegramBot:
                     reply_markup=self._admin_menu_markup(),
                 )
                 return False
-            path, generated_at = self._export_registrations_excel(
+            path, generated_at, _ = self._export_registrations_excel(
                 context,
                 registrations,
                 bot_username=bot_username,
@@ -3388,7 +3413,7 @@ class ConfettiTelegramBot:
             "📊 Таблица заявок студии «Конфетти»\n"
             f"Обновлено: {generated_at}\n"
             "Документ включает все заявки и обновляется при каждом экспорте.\n"
-            "Ссылки в колонке «Фото / файлы оплаты» открывают вложения прямо в боте."
+            "Ссылки в колонке «Комментарий оплаты» открывают вложения прямо в боте."
         )
 
         try:
@@ -4064,6 +4089,39 @@ class _SimpleXlsxBuilder:
         if value is None:
             return _XlsxCell("")
         return _XlsxCell(str(value))
+
+
+class _CloudExportPublisher:
+    """Mirror generated exports into a directory exposed through the cloud."""
+
+    def __init__(self, *, target_dir: Path, base_url: str, filename: Optional[str] = None) -> None:
+        self._target_dir = target_dir.expanduser()
+        self._base_url = base_url.rstrip("/")
+        self._filename = filename
+
+    @classmethod
+    def from_env(cls) -> Optional["_CloudExportPublisher"]:
+        """Configure the publisher from environment variables."""
+
+        base_url = os.environ.get("CONFETTI_EXPORT_CLOUD_URL")
+        target_dir = os.environ.get("CONFETTI_EXPORT_CLOUD_DIR")
+        if not base_url or not target_dir:
+            return None
+
+        filename = os.environ.get("CONFETTI_EXPORT_CLOUD_FILENAME") or None
+        return cls(target_dir=Path(target_dir), base_url=base_url, filename=filename)
+
+    def publish(self, source_path: Path) -> str:
+        """Copy the export into the target directory and return the public URL."""
+
+        if not source_path.exists():
+            raise FileNotFoundError(source_path)
+
+        target_name = self._filename or source_path.name
+        target_path = self._target_dir / target_name
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, target_path)
+        return f"{self._base_url}/{target_name}"
 
 
 def _normalise_admin_chat_ids(chat_ids: AdminChatIdsInput) -> frozenset[int]:
