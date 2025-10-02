@@ -23,6 +23,7 @@ import warnings
 import os
 import random
 import re
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -4328,6 +4329,15 @@ def _coerce_chat_id_from_object(chat: Any) -> int:
 
 def main() -> None:  # pragma: no cover - thin wrapper
     """Entry point used by the console script in the original project."""
+
+    if sys.platform.startswith("win"):
+        # python-telegram-bot relies on selector event loops which are not the default
+        # on Windows since Python 3.8+.  Switching to the selector policy prevents the
+        # application from hanging inside ``run_polling`` during shutdown.
+        try:  # pragma: no cover - specific to Windows runtime
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        except AttributeError:
+            pass
 
     logging.basicConfig(level=logging.INFO)
 
