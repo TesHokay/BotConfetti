@@ -3258,9 +3258,8 @@ class ConfettiTelegramBot:
                 22,
                 18,
                 26,
-                42,
+                36,
                 24,
-                28,
             ),
         )
         builder.add_row(
@@ -3271,7 +3270,6 @@ class ConfettiTelegramBot:
                 "Класс / возраст",
                 "Телефон",
                 "Предпочтительное время",
-                "Комментарий оплаты",
                 "Фото оплаты",
                 "Отправитель",
             )
@@ -3281,29 +3279,11 @@ class ConfettiTelegramBot:
             payment_entries = self._dicts_to_attachments(record.get("payment_media"))
             payment_note = record.get("payment_note") or ""
             preview_info = self._extract_payment_preview(record)
-
-            comment_lines: list[str] = []
-            if payment_note:
-                comment_lines.append(payment_note)
-
-            if preview_info is not None:
-                comment_lines.append("Фото оплаты встроено в таблицу ниже.")
-
-            described_entries = payment_entries
-            if preview_info is not None and preview_info[0]:
-                described_entries = [
-                    item for item in payment_entries if item.file_id != preview_info[0]
-                ]
-
-            if described_entries:
-                comment_lines.extend(self._describe_attachment(item) for item in described_entries)
-
-            if not comment_lines:
-                comment_lines.append("Оплата ожидается")
-
-            comment_text = "\n\n".join(comment_lines).strip()
-            comment_cell = _XlsxCell(comment_text) if comment_text else _XlsxCell("")
-            photo_cell = self._build_payment_photo_cell(preview_info)
+            photo_cell = self._build_payment_photo_cell(
+                preview_info,
+                payment_entries,
+                payment_note,
+            )
 
             builder.add_row(
                 (
@@ -3313,7 +3293,6 @@ class ConfettiTelegramBot:
                     record.get("class") or "",
                     record.get("phone") or "",
                     record.get("time") or "",
-                    comment_cell,
                     photo_cell,
                     record.get("submitted_by") or "",
                 )
@@ -3365,13 +3344,36 @@ class ConfettiTelegramBot:
         return None
 
     def _build_payment_photo_cell(
-        self, preview_info: Optional[tuple[Optional[str], bytes, str, str]]
+        self,
+        preview_info: Optional[tuple[Optional[str], bytes, str, str]],
+        attachments: list[MediaAttachment],
+        payment_note: str,
     ) -> _XlsxCell:
+        text_chunks: list[str] = []
+        if payment_note:
+            text_chunks.append(payment_note)
+
         if preview_info is None:
-            return _XlsxCell("")
-        _, data, mime, caption = preview_info
+            if attachments:
+                text_chunks.extend(self._describe_attachment(item) for item in attachments)
+            if not text_chunks:
+                text_chunks.append("Оплата ожидается")
+            return _XlsxCell("\n\n".join(text_chunks).strip())
+
+        file_id, data, mime, caption = preview_info
+        if caption:
+            text_chunks.append(caption)
+
+        remaining = attachments
+        if file_id:
+            remaining = [item for item in attachments if item.file_id != file_id]
+
+        if remaining:
+            text_chunks.extend(self._describe_attachment(item) for item in remaining)
+
         image = _XlsxImage(data=data, content_type=mime, description=caption)
-        return _XlsxCell("", image=image)
+        text = "\n\n".join(text_chunks).strip()
+        return _XlsxCell(text, image=image)
 
     def _format_registrations_preview(
         self, registrations: list[dict[str, Any]]
