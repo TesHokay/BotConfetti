@@ -1626,10 +1626,23 @@ class ConfettiTelegramBot:
         context: ContextTypes.DEFAULT_TYPE,
         data: dict[str, Any],
         attachments: Optional[list[MediaAttachment]] = None,
+        serialised_media: Optional[list[dict[str, Any]]] = None,
     ) -> dict[str, Any]:
         chat = update.effective_chat
         user = update.effective_user
         record_id = data.get("id") or self._generate_registration_id()
+        payment_media_payload: list[dict[str, Any]] = []
+        if serialised_media is not None:
+            source_media = serialised_media
+        elif attachments:
+            source_media = self._attachments_to_dicts(attachments)
+        else:
+            source_media = data.get("payment_media", [])
+        if isinstance(source_media, list):
+            for item in source_media:
+                if isinstance(item, dict):
+                    payment_media_payload.append(dict(item))
+
         record = {
             "id": record_id,
             "program": data.get("program", ""),
@@ -1643,9 +1656,7 @@ class ConfettiTelegramBot:
             "submitted_by_id": getattr(user, "id", None) if user else None,
             "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
             "payment_note": data.get("payment_note", ""),
-            "payment_media": self._attachments_to_dicts(attachments or [])
-            if attachments
-            else data.get("payment_media", []),
+            "payment_media": payment_media_payload,
         }
         registrations = self._application_data(context).setdefault("registrations", [])
         needs_save = False
@@ -2369,6 +2380,81 @@ class ConfettiTelegramBot:
             attachments.append(MediaAttachment(kind=kind, file_id=file_id, caption=caption))
         return attachments
 
+    async def _serialise_payment_media(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        attachments: list[MediaAttachment],
+        *,
+        existing: Optional[list[dict[str, Any]]] = None,
+    ) -> list[dict[str, Any]]:
+        preview_cache: dict[tuple[str, str], str] = {}
+        if isinstance(existing, list):
+            for item in existing:
+                if not isinstance(item, dict):
+                    continue
+                kind = item.get("kind")
+                file_id = item.get("file_id")
+                preview = item.get("preview_base64")
+                if (
+                    isinstance(kind, str)
+                    and kind
+                    and isinstance(file_id, str)
+                    and file_id
+                    and isinstance(preview, str)
+                    and preview
+                ):
+                    preview_cache[(kind, file_id)] = preview
+
+        serialised: list[dict[str, Any]] = []
+        for attachment in attachments:
+            entry: dict[str, Any] = {
+                "kind": attachment.kind,
+                "file_id": attachment.file_id,
+                "caption": attachment.caption or "",
+            }
+            if attachment.kind == "photo":
+                preview = preview_cache.get((attachment.kind, attachment.file_id))
+                if not preview:
+                    preview = await self._download_photo_data_url(context, attachment)
+                if preview:
+                    entry["preview_base64"] = preview
+            serialised.append(entry)
+        return serialised
+
+    async def _ensure_payment_previews(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        registrations: list[dict[str, Any]],
+    ) -> bool:
+        updated = False
+        for record in registrations:
+            if not isinstance(record, dict):
+                continue
+            media_payload = record.get("payment_media")
+            if not isinstance(media_payload, list) or not media_payload:
+                continue
+            needs_preview = False
+            for item in media_payload:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("kind") == "photo" and not item.get("preview_base64"):
+                    needs_preview = True
+                    break
+            if not needs_preview:
+                continue
+            attachments = self._dicts_to_attachments(media_payload)
+            if not any(attachment.kind == "photo" for attachment in attachments):
+                continue
+            serialised = await self._serialise_payment_media(
+                context,
+                attachments,
+                existing=media_payload,
+            )
+            if serialised != media_payload:
+                record["payment_media"] = serialised
+                updated = True
+        return updated
+
     # ------------------------------------------------------------------
     # Registration conversation
 
@@ -2834,7 +2920,13 @@ class ConfettiTelegramBot:
             return ConversationHandler.END
 
         if attachments:
-            data["payment_media"] = self._attachments_to_dicts(attachments)
+            existing_media = data.get("payment_media")
+            serialised_media = await self._serialise_payment_media(
+                context,
+                attachments,
+                existing=existing_media if isinstance(existing_media, list) else None,
+            )
+            data["payment_media"] = serialised_media
         if text:
             data["payment_note"] = text
 
@@ -3025,7 +3117,15 @@ class ConfettiTelegramBot:
         summary += "\nМы свяжемся с вами в ближайшее время."
 
         await self._reply(update, summary, reply_markup=self._main_menu_markup_for(update, context))
-        record = self._store_registration(update, context, data, attachments)
+        stored_media = data.get("payment_media")
+        serialised_media = stored_media if isinstance(stored_media, list) else None
+        record = self._store_registration(
+            update,
+            context,
+            data,
+            attachments,
+            serialised_media=serialised_media,
+        )
         await self._sync_registration_sheet(context, record, attachments or None)
 
         admin_message = (
@@ -3373,6 +3473,10 @@ class ConfettiTelegramBot:
                 reply_markup=self._admin_menu_markup(),
             )
             return
+
+        previews_updated = await self._ensure_payment_previews(context, registrations)
+        if previews_updated:
+            self._save_persistent_state()
 
         backend = self._sheets_backend
         if backend is not None:
