@@ -14,6 +14,7 @@ warning which allows the bot to start without the rate limiter.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import logging
 import warnings
@@ -28,6 +29,31 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 from xml.sax.saxutils import escape
+
+
+def _module_available(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except ModuleNotFoundError:
+        return False
+
+
+_GOOGLE_SERVICE_ACCOUNT_AVAILABLE = _module_available("google.oauth2.service_account")
+_GOOGLE_DISCOVERY_AVAILABLE = _module_available("googleapiclient.discovery")
+_GOOGLE_HTTP_AVAILABLE = _module_available("googleapiclient.http")
+
+if (
+    _GOOGLE_SERVICE_ACCOUNT_AVAILABLE
+    and _GOOGLE_DISCOVERY_AVAILABLE
+    and _GOOGLE_HTTP_AVAILABLE
+):
+    from google.oauth2.service_account import Credentials  # type: ignore[assignment]
+    from googleapiclient.discovery import build  # type: ignore[assignment]
+    from googleapiclient.http import MediaFileUpload  # type: ignore[assignment]
+else:  # pragma: no cover - optional dependency branch
+    Credentials = None  # type: ignore[assignment]
+    build = None  # type: ignore[assignment]
+    MediaFileUpload = None  # type: ignore[assignment]
 
 
 TELEGRAM_IMPORT_ERROR: ModuleNotFoundError | None = None
@@ -550,6 +576,7 @@ class ConfettiTelegramBot:
             self._runtime_admin_ids.update(dynamic_admins)
         self._storage_dirty = False
         self._bot_username: Optional[str] = None
+        self._drive_publisher: Optional[_DriveExportPublisher] = _DriveExportPublisher.from_env()
         self._cloud_publisher: Optional[_CloudExportPublisher] = _CloudExportPublisher.from_env()
 
     # ------------------------------------------------------------------
@@ -3222,6 +3249,13 @@ class ConfettiTelegramBot:
             )
 
     def _publish_cloud_export(self, path: Path) -> Optional[str]:
+        drive_publisher = getattr(self, "_drive_publisher", None)
+        if drive_publisher is not None:
+            try:
+                return drive_publisher.publish(path)
+            except Exception as exc:  # pragma: no cover - network/filesystem dependent
+                LOGGER.warning("Не удалось обновить таблицу в Google Drive: %s", exc)
+
         publisher = getattr(self, "_cloud_publisher", None)
         if publisher is None:
             return None
@@ -4089,6 +4123,167 @@ class _SimpleXlsxBuilder:
         if value is None:
             return _XlsxCell("")
         return _XlsxCell(str(value))
+
+
+class _DriveExportPublisher:
+    """Upload XLSX exports directly into a Google Drive folder."""
+
+    _SCOPES = ("https://www.googleapis.com/auth/drive.file",)
+    _MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    def __init__(
+        self,
+        *,
+        folder_id: str,
+        credentials: Any,
+        filename: Optional[str] = None,
+        share_with_anyone: bool = True,
+        supports_all_drives: bool = True,
+    ) -> None:
+        if build is None:
+            raise RuntimeError("Google Drive client library is not available")
+
+        self._folder_id = folder_id
+        self._credentials = credentials
+        self._filename = filename
+        self._share_with_anyone = share_with_anyone
+        self._supports_all_drives = supports_all_drives
+        self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+
+    @classmethod
+    def from_env(cls) -> Optional["_DriveExportPublisher"]:
+        folder_id = os.environ.get("CONFETTI_EXPORT_DRIVE_FOLDER_ID")
+        if not folder_id:
+            return None
+
+        if Credentials is None or build is None or MediaFileUpload is None:
+            LOGGER.warning(
+                "Google Drive не настроен: установите пакеты 'google-api-python-client' и 'google-auth'."
+            )
+            return None
+
+        json_blob = os.environ.get("CONFETTI_GOOGLE_SERVICE_ACCOUNT_JSON")
+        json_path = os.environ.get("CONFETTI_GOOGLE_SERVICE_ACCOUNT_FILE")
+
+        credentials: Any | None = None
+        if json_blob:
+            try:
+                account_info = json.loads(json_blob)
+            except json.JSONDecodeError as exc:
+                LOGGER.warning("Некорректный JSON сервисного аккаунта: %s", exc)
+                return None
+            credentials = Credentials.from_service_account_info(account_info, scopes=cls._SCOPES)
+        elif json_path:
+            try:
+                credentials = Credentials.from_service_account_file(
+                    Path(json_path).expanduser(), scopes=cls._SCOPES
+                )
+            except Exception as exc:  # pragma: no cover - filesystem dependent
+                LOGGER.warning("Не удалось загрузить ключ сервисного аккаунта: %s", exc)
+                return None
+        else:
+            LOGGER.warning(
+                "Для экспорта в Google Drive задайте переменную CONFETTI_GOOGLE_SERVICE_ACCOUNT_JSON или CONFETTI_GOOGLE_SERVICE_ACCOUNT_FILE."
+            )
+            return None
+
+        filename = os.environ.get("CONFETTI_EXPORT_CLOUD_FILENAME") or None
+        share_value = os.environ.get("CONFETTI_EXPORT_DRIVE_SHARE_ANYONE", "true").strip().lower()
+        share_with_anyone = share_value not in {"0", "false", "no"}
+        supports_value = os.environ.get("CONFETTI_EXPORT_DRIVE_SUPPORTS_ALL_DRIVES", "true").strip().lower()
+        supports_all_drives = supports_value not in {"0", "false", "no"}
+
+        try:
+            return cls(
+                folder_id=folder_id,
+                credentials=credentials,
+                filename=filename,
+                share_with_anyone=share_with_anyone,
+                supports_all_drives=supports_all_drives,
+            )
+        except Exception as exc:  # pragma: no cover - client construction depends on env
+            LOGGER.warning("Не удалось инициализировать клиент Google Drive: %s", exc)
+            return None
+
+    def publish(self, source_path: Path) -> str:
+        if MediaFileUpload is None:
+            raise RuntimeError("Google Drive client library is not available")
+
+        if not source_path.exists():
+            raise FileNotFoundError(source_path)
+
+        file_name = self._filename or source_path.name
+        query_name = file_name.replace("'", "\\'")
+        query = (
+            f"name = '{query_name}' and '{self._folder_id}' in parents and trashed = false"
+        )
+
+        service = self._service
+        list_request = service.files().list(
+            q=query,
+            spaces="drive",
+            fields="files(id,name,webViewLink)",
+            includeItemsFromAllDrives=self._supports_all_drives,
+            supportsAllDrives=self._supports_all_drives,
+        )
+        response = list_request.execute()
+        files = response.get("files", []) if isinstance(response, dict) else []
+
+        media = MediaFileUpload(
+            str(source_path),
+            mimetype=self._MIME_TYPE,
+            resumable=False,
+        )
+
+        result: dict[str, Any]
+        file_id: Optional[str] = None
+        if files:
+            file_id = files[0].get("id")
+            update_request = service.files().update(
+                fileId=file_id,
+                media_body=media,
+                fields="id,webViewLink",
+                supportsAllDrives=self._supports_all_drives,
+            )
+            result = update_request.execute()
+        else:
+            metadata = {
+                "name": file_name,
+                "parents": [self._folder_id],
+                "mimeType": self._MIME_TYPE,
+            }
+            create_request = service.files().create(
+                body=metadata,
+                media_body=media,
+                fields="id,webViewLink",
+                supportsAllDrives=self._supports_all_drives,
+            )
+            result = create_request.execute()
+            file_id = result.get("id") if isinstance(result, dict) else None
+
+        if not file_id and isinstance(result, dict):
+            file_id = result.get("id")
+
+        if not file_id:
+            raise RuntimeError("Google Drive не вернул идентификатор файла")
+
+        if self._share_with_anyone:
+            try:
+                service.permissions().create(
+                    fileId=file_id,
+                    body={"type": "anyone", "role": "reader"},
+                    fields="id",
+                    supportsAllDrives=self._supports_all_drives,
+                ).execute()
+            except Exception as exc:  # pragma: no cover - depends on Drive permissions
+                LOGGER.debug(
+                    "Не удалось обновить права доступа для файла %s: %s", file_id, exc
+                )
+
+        link = result.get("webViewLink") if isinstance(result, dict) else None
+        if not link:
+            link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+        return link
 
 
 class _CloudExportPublisher:

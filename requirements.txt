@@ -1,3 +1,6 @@
 # Exported via `poetry export --format requirements.txt --output requirements.txt`
 python-telegram-bot==20.7
 python-dotenv==1.0.0
+google-api-python-client==2.108.0
+google-auth==2.27.0
+google-auth-httplib2==0.2.0
