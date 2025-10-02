@@ -1376,9 +1376,12 @@ class ConfettiTelegramBot:
         chat = update.effective_chat
         user = update.effective_user
         record_id = data.get("id") or self._generate_registration_id()
+        program_label = data.get("program", "")
+        teacher = data.get("teacher") or self._resolve_program_teacher(str(program_label))
         record = {
             "id": record_id,
-            "program": data.get("program", ""),
+            "program": program_label,
+            "teacher": teacher,
             "child_name": data.get("child_name", ""),
             "class": data.get("class", ""),
             "phone": data.get("phone", ""),
@@ -1530,7 +1533,9 @@ class ConfettiTelegramBot:
             "voice": "Голос",
         }
         title = labels.get(attachment.kind, attachment.kind or "Вложение")
-        return f"{title}: {attachment.file_id}"
+        if attachment.caption:
+            return f"{title}: {attachment.caption}"
+        return f"{title} во вложении"
 
     async def _store_cancellation(
         self,
@@ -2098,6 +2103,12 @@ class ConfettiTelegramBot:
                 lines.append(value)
         return "\n".join(line for line in lines if line is not None)
 
+    def _resolve_program_teacher(self, program_label: str) -> str:
+        for program in self.PROGRAMS:
+            if program.get("label") == program_label:
+                return program.get("teacher", "") or ""
+        return ""
+
     async def _registration_prompt_program_buttons(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
@@ -2114,6 +2125,7 @@ class ConfettiTelegramBot:
         message = update.message
 
         program_label = ""
+        selected_program: Optional[dict[str, str]] = None
         if query is not None:
             data = query.data or ""
             try:
@@ -2139,15 +2151,22 @@ class ConfettiTelegramBot:
                     await self._reply(update, f"Вы выбрали программу:\n{details}")
             else:
                 await self._reply(update, f"Вы выбрали программу:\n{details}")
+            selected_program = program
         else:
             program_label = (message.text if message else "").strip()
             program = next((item for item in self.PROGRAMS if item["label"] == program_label), None)
             if not program:
                 await self._registration_prompt_program_buttons(update, context)
                 return self.REGISTRATION_PROGRAM
+            selected_program = program
 
         registration = context.user_data.setdefault("registration", {})
         registration["program"] = program_label
+        teacher = (selected_program or {}).get("teacher") or self._resolve_program_teacher(program_label)
+        if teacher:
+            registration["teacher"] = teacher
+        else:
+            registration.pop("teacher", None)
 
         defaults = self._get_user_defaults(update.effective_user)
         if defaults:
@@ -2264,7 +2283,7 @@ class ConfettiTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
-        for key in ("program", "time", "saved_time", "saved_time_original", "proposed_time"):
+        for key in ("program", "teacher", "time", "saved_time", "saved_time_original", "proposed_time"):
             registration.pop(key, None)
         await self._reply(
             update,
@@ -2684,6 +2703,8 @@ class ConfettiTelegramBot:
         payment_note = data.get("payment_note")
         payment_status = "✅ Оплата подтверждена" if attachments else "⏳ Оплата ожидается"
 
+        teacher_line = data.get("teacher") or self._resolve_program_teacher(str(data.get("program", "")))
+
         summary = (
             "Ваша заявка принята!\n\n"
             f"👦 Участник: {data.get('child_name', '—')} ({data.get('class', '—')})\n"
@@ -2692,6 +2713,8 @@ class ConfettiTelegramBot:
             f"📚 Программа: {data.get('program', '—')}\n"
             f"💳 {payment_status}\n"
         )
+        if teacher_line:
+            summary += f"{teacher_line}\n"
         if payment_note:
             summary += f"📝 Комментарий: {payment_note}\n"
         summary += "\nМы свяжемся с вами в ближайшее время."
@@ -2707,6 +2730,8 @@ class ConfettiTelegramBot:
             f"🕒 Время: {data.get('time', '—')}\n"
             f"💳 Статус оплаты: {'получено' if attachments else 'ожидается'}"
         )
+        if teacher_line:
+            admin_message += f"\n{teacher_line}"
         if payment_note:
             admin_message += f"\n📝 Комментарий: {payment_note}"
 
@@ -3150,14 +3175,14 @@ class ConfettiTelegramBot:
         message_parts.append("")
         if bot_username:
             message_parts.append(
-                "🔍 В колонке «Фото / файлы оплаты» доступны ссылки, позволяющие открыть вложения прямо в боте."
+                "🔍 В колонке «Комментарий оплаты» появится ссылка, чтобы открыть подтверждение прямо в боте."
             )
             message_parts.append(
-                "Они работают только для администраторов с доступом к панели."
+                "Она работает только для администраторов с доступом к панели."
             )
         else:
             message_parts.append(
-                "ℹ️ В столбце с вложениями указаны типы файлов. Чтобы открывать их ссылкой, задайте имя пользователя боту." 
+                "ℹ️ В колонке «Комментарий оплаты» указаны типы вложений. Чтобы получать ссылку, задайте имя пользователя боту."
             )
         if deeplink:
             message_parts.append("")
@@ -3194,30 +3219,26 @@ class ConfettiTelegramBot:
         builder = _SimpleXlsxBuilder(
             sheet_name="Заявки",
             column_widths=(
-                16,
                 20,
                 36,
+                34,
                 30,
                 22,
                 18,
-                24,
-                20,
-                28,
-                36,
                 26,
+                42,
+                28,
             ),
         )
         builder.add_row(
             (
-                "ID заявки",
                 "Дата заявки",
                 "Программа",
+                "Преподаватель",
                 "Участник",
                 "Класс / возраст",
                 "Телефон",
                 "Предпочтительное время",
-                "Статус оплаты",
-                "Фото / файлы оплаты",
                 "Комментарий оплаты",
                 "Отправитель",
             )
@@ -3225,43 +3246,36 @@ class ConfettiTelegramBot:
 
         for record in registrations:
             payment_entries = self._dicts_to_attachments(record.get("payment_media"))
-            payment_count = len(payment_entries)
-            payment_status = "Получено" if payment_count else "Ожидается"
-            if payment_count:
-                payment_status += f" ({payment_count} влож.)"
-
             registration_id = str(record.get("id") or "")
-            attachments_cell: _XlsxCell
-            attachment_details = "\n".join(self._describe_attachment(item) for item in payment_entries)
-
-            if payment_count and bot_username and registration_id:
-                label = "Открыть файл" if payment_count == 1 else f"Открыть файлы ({payment_count})"
-                link = f"https://t.me/{bot_username}?start=payment_{registration_id}"
-                attachments_cell = _XlsxCell.hyperlink(label, link)
-            elif payment_count:
-                attachments_cell = _XlsxCell(attachment_details or "Прикреплённые файлы")
-            else:
-                attachments_cell = _XlsxCell("Нет вложений")
-
             payment_note = record.get("payment_note") or ""
-            if attachment_details and attachments_cell.formula:
-                if payment_note:
-                    payment_note = f"{payment_note}\n\n{attachment_details}"
+            teacher_name = record.get("teacher") or self._resolve_program_teacher(str(record.get("program", "")))
+
+            comment_lines: list[str] = []
+            if payment_note:
+                comment_lines.append(payment_note)
+
+            if payment_entries:
+                if bot_username and registration_id:
+                    link = f"https://t.me/{bot_username}?start=payment_{registration_id}"
+                    comment_lines.append(f"Ссылка на подтверждение оплаты: {link}")
                 else:
-                    payment_note = attachment_details
+                    comment_lines.extend(self._describe_attachment(item) for item in payment_entries)
+            elif not payment_note:
+                comment_lines.append("Оплата ожидается")
+
+            comment_text = "\n\n".join(comment_lines).strip()
+            comment_cell = _XlsxCell(comment_text) if comment_text else _XlsxCell("")
 
             builder.add_row(
                 (
-                    registration_id,
                     record.get("created_at") or "",
                     record.get("program") or "",
+                    teacher_name or "",
                     record.get("child_name") or "",
                     record.get("class") or "",
                     record.get("phone") or "",
                     record.get("time") or "",
-                    payment_status,
-                    attachments_cell,
-                    payment_note,
+                    comment_cell,
                     record.get("submitted_by") or "",
                 )
             )
