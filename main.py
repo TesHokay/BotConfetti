@@ -329,7 +329,6 @@ class ConfettiTelegramBot:
     MAIN_MENU_BUTTON = "⬅️ Главное меню"
     REGISTRATION_BUTTON = "📝 Запись"
     CANCELLATION_BUTTON = "❗️ Отменить занятие"
-    REGISTRATION_SKIP_PAYMENT_BUTTON = "⏭ Пока без оплаты"
     REGISTRATION_CONFIRM_SAVED_BUTTON = "✅ Продолжить"
     REGISTRATION_EDIT_DETAILS_BUTTON = "✏️ Изменить данные"
     REGISTRATION_KEEP_TIME_BUTTON = "🔁 То же время"
@@ -2439,10 +2438,7 @@ class ConfettiTelegramBot:
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     def _payment_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [
-            [KeyboardButton(self.REGISTRATION_SKIP_PAYMENT_BUTTON)],
-            [KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)],
-        ]
+        keyboard = [[KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)]]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     def _saved_time_keyboard(self) -> ReplyKeyboardMarkup:
@@ -2561,8 +2557,8 @@ class ConfettiTelegramBot:
     async def _prompt_payment_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         instructions = self._get_content(context).payment
         message = (
-            "💳 Отправьте подтверждение оплаты (фото, видео или файл).\n\n"
-            "➡️ Если оплаты ещё нет, нажмите «⏭ Пока без оплаты» и мы свяжемся с вами позже."
+            "💳 Отправьте подтверждение оплаты — нам нужно фото или скан квитанции.\n\n"
+            "⚠️ Без подтверждения оплаты заявка не будет отправлена администраторам."
         )
         if instructions.text:
             message += "\n\n" + instructions.text
@@ -2586,17 +2582,26 @@ class ConfettiTelegramBot:
         if text == self.BACK_BUTTON:
             return await self._registration_back_to_time(update, context)
 
-        if text == self.REGISTRATION_SKIP_PAYMENT_BUTTON:
-            data["payment_note"] = "Платёж будет подтверждён позже"
-            data.pop("payment_media", None)
-            await self._send_registration_summary(update, context, media=None)
-            await self._show_main_menu(update, context)
-            return ConversationHandler.END
-
-        if attachments:
-            data["payment_media"] = await self._serialise_payment_media(context, attachments)
         if text:
             data["payment_note"] = text
+
+        if not attachments:
+            await self._reply(
+                update,
+                "📎 Пожалуйста, прикрепите фото чека или квитанции, чтобы завершить запись.",
+                reply_markup=self._payment_keyboard(),
+            )
+            return self.REGISTRATION_PAYMENT
+
+        if not any(item.kind == "photo" for item in attachments):
+            await self._reply(
+                update,
+                "🖼 Отправьте хотя бы одну фотографию подтверждения оплаты.",
+                reply_markup=self._payment_keyboard(),
+            )
+            return self.REGISTRATION_PAYMENT
+
+        data["payment_media"] = await self._serialise_payment_media(context, attachments)
 
         await self._send_registration_summary(update, context, media=attachments or None)
         await self._show_main_menu(update, context)
@@ -3258,7 +3263,7 @@ class ConfettiTelegramBot:
             )
         message_parts.append("")
         message_parts.append(
-            "🔗 В столбце «Фото оплаты» указаны ссылки на загруженные подтверждения платежей."
+            "🔗 В столбце «Фото оплаты» размещены кликабельные ссылки на подтверждения платежей."
         )
 
         await self._reply(
@@ -3395,19 +3400,27 @@ class ConfettiTelegramBot:
         payment_note: str,
     ) -> _XlsxCell:
         has_attachments = bool(attachments)
-        text_lines: list[str] = []
 
         if bot_username and registration_id and has_attachments:
+            url = self._build_payment_deeplink(bot_username, registration_id, None)
             total = len(attachments)
-            for index, attachment in enumerate(attachments):
-                deeplink = self._build_payment_deeplink(
-                    bot_username,
-                    registration_id,
-                    index if total > 1 else None,
-                )
-                label = self._format_payment_link_label(attachment, index, total)
-                text_lines.append(f"{label}: {deeplink}")
-        elif has_attachments:
+            label_lines: list[str] = []
+
+            if total == 1:
+                label_lines.append(self._format_payment_link_label(attachments[0], 0, total))
+            else:
+                label_lines.append(f"Подтверждение оплаты — файлов: {total}")
+                for index, attachment in enumerate(attachments, start=1):
+                    label_lines.append(f"{index}. {self._format_payment_link_label(attachment, index - 1, total)}")
+
+            if payment_note:
+                label_lines.append(payment_note)
+
+            label_text = "\n".join(label_lines)
+            return _XlsxCell(text=label_text, formula=self._hyperlink_formula(url, label_text))
+
+        text_lines: list[str] = []
+        if has_attachments:
             text_lines.append("Фото оплаты доступно во вложениях бота")
         else:
             text_lines.append("Оплата ожидается")
@@ -3420,6 +3433,16 @@ class ConfettiTelegramBot:
         cell_text = "\n".join(text_lines).strip()
 
         return _XlsxCell(cell_text)
+
+    @staticmethod
+    def _hyperlink_formula(url: str, label: str) -> str:
+        safe_url = url.replace('"', '""')
+        if "\n" in label:
+            segments = [segment.replace('"', '""') for segment in label.split("\n")]
+            label_expr = '&CHAR(10)&'.join(f'"{segment}"' for segment in segments)
+            return f'HYPERLINK("{safe_url}",{label_expr})'
+        safe_label = label.replace('"', '""')
+        return f'HYPERLINK("{safe_url}","{safe_label}")'
 
     @staticmethod
     def _build_payment_deeplink(
