@@ -31,12 +31,14 @@ from xml.sax.saxutils import escape
 
 try:  # pragma: no cover - optional dependency
     from google.auth.transport.requests import Request as GoogleAuthRequest
-    from google.oauth2.credentials import Credentials as GoogleOAuthCredentials
+    from google.oauth2.service_account import (
+        Credentials as GoogleServiceAccountCredentials,
+    )
     from googleapiclient.discovery import build as google_build
     from googleapiclient.errors import HttpError as GoogleHttpError
 except ModuleNotFoundError:  # pragma: no cover - handled at runtime
     GoogleAuthRequest = None  # type: ignore[assignment]
-    GoogleOAuthCredentials = None  # type: ignore[assignment]
+    GoogleServiceAccountCredentials = None  # type: ignore[assignment]
     google_build = None  # type: ignore[assignment]
     GoogleHttpError = Exception  # type: ignore[assignment]
 
@@ -3208,6 +3210,7 @@ class ConfettiTelegramBot:
             context,
             table_rows,
         )
+        exporter = self._ensure_google_sheets_exporter()
         sheet_url = await self._sync_google_sheet(table_rows)
         preview_lines = self._format_registrations_preview(registrations)
         deeplink = await self._build_registrations_deeplink(context)
@@ -3230,6 +3233,10 @@ class ConfettiTelegramBot:
             message_parts.append(
                 "Ссылка ведёт на Google Sheets с актуальными данными — обновляется автоматически после экспорта."
             )
+            if exporter and exporter.service_account_email:
+                message_parts.append(
+                    f"🔑 Если доступа нет, поделитесь таблицей с аккаунтом {exporter.service_account_email}."
+                )
         if deeplink:
             message_parts.append("")
             message_parts.append(f"🔗 Таблица: {deeplink}")
@@ -4294,23 +4301,36 @@ class _GoogleSheetsExporter:
     """Synchronise admin exports with a Google Sheets document."""
 
     DEFAULT_SPREADSHEET_ID = "1DreSJ4xpKFFtcrJN1IJBJ51MOa7_RcqGXAmKYhWSlfA"
+    SERVICE_ACCOUNT_JSON_ENV = "CONFETTI_GOOGLE_SERVICE_ACCOUNT_JSON"
+    SERVICE_ACCOUNT_FILE_ENV = "CONFETTI_GOOGLE_SERVICE_ACCOUNT_FILE"
     SCOPES = (
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive.file",
     )
 
-    def __init__(self, spreadsheet_id: str, credentials: GoogleOAuthCredentials) -> None:
+    def __init__(
+        self,
+        spreadsheet_id: str,
+        credentials: GoogleServiceAccountCredentials,
+        *,
+        service_account_email: Optional[str] = None,
+    ) -> None:
         self.spreadsheet_id = spreadsheet_id
         self._credentials = credentials
+        self._service_account_email = service_account_email
         self._service: Optional[Any] = None
         self._sheet_id: Optional[int] = None
         self._sheet_title: Optional[str] = None
         self._spreadsheet_url: Optional[str] = None
 
+    @property
+    def service_account_email(self) -> Optional[str]:
+        return self._service_account_email
+
     @classmethod
     def from_env(cls) -> Optional["_GoogleSheetsExporter"]:
         if (
-            GoogleOAuthCredentials is None
+            GoogleServiceAccountCredentials is None
             or google_build is None
             or GoogleAuthRequest is None
         ):
@@ -4319,13 +4339,52 @@ class _GoogleSheetsExporter:
             )
             return None
 
-        client_id = os.environ.get("CONFETTI_GOOGLE_OAUTH_CLIENT_ID")
-        client_secret = os.environ.get("CONFETTI_GOOGLE_OAUTH_CLIENT_SECRET")
-        refresh_token = os.environ.get("CONFETTI_GOOGLE_OAUTH_REFRESH_TOKEN")
-        if not all((client_id, client_secret, refresh_token)):
+        service_account_info: Optional[dict[str, Any]] = None
+        service_account_email: Optional[str] = None
+
+        json_blob = os.environ.get(cls.SERVICE_ACCOUNT_JSON_ENV)
+        if json_blob:
+            json_blob = json_blob.strip()
+        if json_blob:
+            try:
+                service_account_info = json.loads(json_blob)
+            except json.JSONDecodeError:
+                LOGGER.warning(
+                    "Не удалось разобрать JSON сервисного аккаунта из %s.",
+                    cls.SERVICE_ACCOUNT_JSON_ENV,
+                )
+                service_account_info = None
+        if service_account_info is None:
+            credentials_path = os.environ.get(cls.SERVICE_ACCOUNT_FILE_ENV)
+            if credentials_path:
+                credentials_path = credentials_path.strip()
+            if credentials_path:
+                try:
+                    payload = Path(credentials_path).read_text(encoding="utf-8")
+                    service_account_info = json.loads(payload)
+                except (OSError, json.JSONDecodeError) as exc:
+                    LOGGER.warning(
+                        "Не удалось прочитать сервисный аккаунт из файла %s: %s",
+                        credentials_path,
+                        exc,
+                    )
+                    service_account_info = None
+
+        if not service_account_info:
             LOGGER.info(
-                "OAuth-учётные данные Google не заданы, пропускаем синхронизацию Google Sheets."
+                "Сервисный аккаунт Google не настроен, пропускаем синхронизацию Google Sheets."
             )
+            return None
+
+        service_account_email = service_account_info.get("client_email")
+
+        try:
+            credentials = GoogleServiceAccountCredentials.from_service_account_info(
+                service_account_info,
+                scopes=cls.SCOPES,
+            )
+        except (ValueError, TypeError) as exc:
+            LOGGER.warning("Некорректные данные сервисного аккаунта: %s", exc)
             return None
 
         spreadsheet_id = os.environ.get("CONFETTI_GOOGLE_SHEETS_ID")
@@ -4334,16 +4393,11 @@ class _GoogleSheetsExporter:
         if not spreadsheet_id:
             spreadsheet_id = cls.DEFAULT_SPREADSHEET_ID
 
-        credentials = GoogleOAuthCredentials(
-            token=None,
-            refresh_token=refresh_token,
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=client_id,
-            client_secret=client_secret,
-            scopes=cls.SCOPES,
+        return cls(
+            spreadsheet_id,
+            credentials,
+            service_account_email=service_account_email,
         )
-
-        return cls(spreadsheet_id, credentials)
 
     def sync(
         self,
