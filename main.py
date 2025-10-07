@@ -4346,6 +4346,8 @@ class _GoogleSheetsExporter:
         if json_blob:
             json_blob = json_blob.strip()
         if json_blob:
+            if (json_blob.startswith(("'", '"')) and json_blob.endswith(("'", '"')) and len(json_blob) >= 2):
+                json_blob = json_blob[1:-1].strip()
             try:
                 service_account_info = json.loads(json_blob)
             except json.JSONDecodeError:
