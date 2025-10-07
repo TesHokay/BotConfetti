@@ -1664,11 +1664,15 @@ class ConfettiTelegramBot:
                         reply_markup=self._main_menu_markup_for(update, context),
                     )
                     return
-                registration_id = payload.split("payment_", 1)[1]
+                remainder = payload.split("payment_", 1)[1]
+                registration_id, attachment_index = self._parse_payment_deeplink_payload(
+                    remainder
+                )
                 handled = await self._send_registration_payment_media(
                     update,
                     context,
                     registration_id,
+                    attachment_index=attachment_index,
                 )
                 if handled:
                     return
@@ -3253,7 +3257,9 @@ class ConfettiTelegramBot:
                 "⚠️ Не удалось обновить облачную таблицу. Попробуйте ещё раз позже."
             )
         message_parts.append("")
-        message_parts.append("🔗 В столбце «Фото оплаты» размещена кликабельная ссылка на подтверждение платежа.")
+        message_parts.append(
+            "🔗 В столбце «Фото оплаты» указаны ссылки на загруженные подтверждения платежей."
+        )
 
         await self._reply(
             update,
@@ -3390,33 +3396,80 @@ class ConfettiTelegramBot:
     ) -> _XlsxCell:
         has_attachments = bool(attachments)
         text_lines: list[str] = []
-        link_url: Optional[str] = None
 
         if bot_username and registration_id and has_attachments:
-            link_url = f"https://t.me/{bot_username}?start=payment_{registration_id}"
-            link_label = "Открыть фото оплаты"
-            text_lines.append(link_label)
+            total = len(attachments)
+            for index, attachment in enumerate(attachments):
+                deeplink = self._build_payment_deeplink(
+                    bot_username,
+                    registration_id,
+                    index if total > 1 else None,
+                )
+                label = self._format_payment_link_label(attachment, index, total)
+                text_lines.append(f"{label}: {deeplink}")
         elif has_attachments:
             text_lines.append("Фото оплаты доступно во вложениях бота")
         else:
             text_lines.append("Оплата ожидается")
 
         if payment_note:
+            if text_lines:
+                text_lines.append("")
             text_lines.append(payment_note)
 
-        if has_attachments and attachments[0].caption:
-            text_lines.append(attachments[0].caption)
-
-        extra_attachments = attachments[1:] if has_attachments else []
-        if extra_attachments:
-            text_lines.extend(self._describe_attachment(item) for item in extra_attachments)
-
-        cell_text = "\n\n".join(text_lines).strip()
-
-        if link_url:
-            return _XlsxCell.hyperlink(cell_text or "Открыть фото оплаты", link_url)
+        cell_text = "\n".join(text_lines).strip()
 
         return _XlsxCell(cell_text)
+
+    @staticmethod
+    def _build_payment_deeplink(
+        bot_username: str,
+        registration_id: str,
+        attachment_index: Optional[int],
+    ) -> str:
+        base = f"https://t.me/{bot_username}?start=payment_{registration_id}"
+        if attachment_index is None:
+            return base
+        return f"{base}_{attachment_index + 1}"
+
+    @staticmethod
+    def _format_payment_link_label(
+        attachment: MediaAttachment,
+        index: int,
+        total: int,
+    ) -> str:
+        labels = {
+            "photo": "Фото",
+            "video": "Видео",
+            "animation": "GIF",
+            "document": "Файл",
+            "video_note": "Видео-заметка",
+            "audio": "Аудио",
+            "voice": "Голос",
+        }
+        base = labels.get(attachment.kind, attachment.kind or "Вложение")
+        if total > 1:
+            base = f"{base} {index + 1}"
+        if attachment.caption:
+            base = f"{base} ({attachment.caption})"
+        return base
+
+    @staticmethod
+    def _parse_payment_deeplink_payload(
+        payload: str,
+    ) -> tuple[str, Optional[int]]:
+        candidate = payload.strip()
+        if not candidate:
+            return "", None
+
+        if "_" in candidate:
+            base, suffix = candidate.rsplit("_", 1)
+            if suffix.isdigit():
+                index = int(suffix) - 1
+                if index >= 0:
+                    return base, index
+
+        return candidate, None
 
     def _format_registrations_preview(
         self, registrations: list[dict[str, Any]]
@@ -3460,6 +3513,8 @@ class ConfettiTelegramBot:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         registration_id: str,
+        *,
+        attachment_index: Optional[int] = None,
     ) -> bool:
         record = self._find_registration_by_id(context, registration_id)
         if record is None:
@@ -3479,6 +3534,18 @@ class ConfettiTelegramBot:
             )
             return False
 
+        selected_attachments = attachments
+        if attachment_index is not None:
+            if 0 <= attachment_index < len(attachments):
+                selected_attachments = [attachments[attachment_index]]
+            else:
+                await self._reply(
+                    update,
+                    "Не удалось найти вложение с указанным номером.",
+                    reply_markup=self._admin_menu_markup(),
+                )
+                return False
+
         summary_lines = [
             "💳 Вложения по заявке",
             f"👦 Участник: {record.get('child_name', '—')} ({record.get('class', '—')})",
@@ -3486,6 +3553,11 @@ class ConfettiTelegramBot:
             f"🗓 Создана: {record.get('created_at', '—')}",
             f"📎 Файлов: {len(attachments)}",
         ]
+
+        if attachment_index is not None and len(attachments) > 1:
+            summary_lines.append(
+                f"🔍 Показан файл {attachment_index + 1} из {len(attachments)}"
+            )
 
         chat = update.effective_chat
         try:
@@ -3501,7 +3573,7 @@ class ConfettiTelegramBot:
                 context,
                 chat_id,
                 text="\n".join(summary_lines),
-                media=attachments,
+                media=selected_attachments,
                 reply_markup=self._admin_menu_markup(),
             )
         except Exception as exc:  # pragma: no cover - network dependent
