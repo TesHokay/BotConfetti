@@ -14,8 +14,6 @@ warning which allows the bot to start without the rate limiter.
 from __future__ import annotations
 
 import asyncio
-import base64
-import binascii
 import json
 import logging
 import warnings
@@ -23,7 +21,6 @@ import os
 import random
 import re
 import sys
-import imghdr
 from datetime import datetime, timedelta
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -2103,117 +2100,16 @@ class ConfettiTelegramBot:
 
         serialised: list[dict[str, str]] = []
         for attachment in attachments:
-            entry: dict[str, str] = {
-                "kind": attachment.kind,
-                "file_id": attachment.file_id,
-                "caption": attachment.caption or "",
-            }
-            preview_base64 = attachment.preview_base64 or ""
-            preview_mime = attachment.preview_mime or ""
-            if attachment.kind == "photo":
-                if not preview_base64:
-                    preview_payload = await self._download_media_preview(
-                        context, attachment
-                    )
-                    if preview_payload is not None:
-                        preview_bytes, mime_type = preview_payload
-                        preview_base64 = base64.b64encode(preview_bytes).decode("ascii")
-                        preview_mime = mime_type
-                        attachment.preview_base64 = preview_base64
-                        attachment.preview_mime = preview_mime
-                if preview_base64:
-                    entry["preview_base64"] = preview_base64
-                    entry["preview_mime"] = preview_mime or "image/jpeg"
-                else:
-                    entry["preview_base64"] = ""
-                    entry["preview_mime"] = ""
-            else:
-                entry["preview_base64"] = preview_base64
-                entry["preview_mime"] = preview_mime
-            serialised.append(entry)
+            serialised.append(
+                {
+                    "kind": attachment.kind,
+                    "file_id": attachment.file_id,
+                    "caption": attachment.caption or "",
+                    "preview_base64": attachment.preview_base64 or "",
+                    "preview_mime": attachment.preview_mime or "",
+                }
+            )
         return serialised
-
-    async def _download_media_preview(
-        self,
-        context: ContextTypes.DEFAULT_TYPE,
-        attachment: MediaAttachment,
-    ) -> Optional[tuple[bytes, str]]:
-        """Fetch the raw bytes for a payment attachment preview."""
-
-        if attachment.kind != "photo":
-            return None
-
-        bot = getattr(context, "bot", None)
-        if bot is None:
-            return None
-
-        try:
-            file = await bot.get_file(attachment.file_id)
-        except Exception as exc:  # pragma: no cover - network dependent
-            LOGGER.debug("Не удалось получить файл оплаты %s: %s", attachment.file_id, exc)
-            return None
-
-        try:
-            payload = await file.download_as_bytearray()
-        except Exception as exc:  # pragma: no cover - network dependent
-            LOGGER.debug("Не удалось скачать файл оплаты %s: %s", attachment.file_id, exc)
-            return None
-
-        data = bytes(payload)
-        mime_hint = getattr(file, "mime_type", None)
-        file_path = getattr(file, "file_path", None)
-        mime_type = self._resolve_image_mime(data, mime_hint=mime_hint, file_path=file_path)
-        return data, mime_type
-
-    @staticmethod
-    def _resolve_image_mime(
-        data: bytes,
-        *,
-        mime_hint: Optional[str] = None,
-        file_path: Optional[str] = None,
-    ) -> str:
-        if mime_hint and mime_hint.startswith("image/"):
-            return mime_hint
-
-        if file_path:
-            extension = Path(str(file_path)).suffix.lower()
-            mapping = {
-                ".jpg": "image/jpeg",
-                ".jpeg": "image/jpeg",
-                ".png": "image/png",
-                ".gif": "image/gif",
-            }
-            if extension in mapping:
-                return mapping[extension]
-
-        detected = imghdr.what(None, data)
-        if detected == "png":
-            return "image/png"
-        if detected in {"gif", "tiff", "bmp"}:
-            return f"image/{detected}"
-        return "image/jpeg"
-
-    async def _ensure_payment_previews(
-        self,
-        context: ContextTypes.DEFAULT_TYPE,
-        registrations: list[dict[str, Any]],
-    ) -> bool:
-        """Populate missing previews for historical payment attachments."""
-
-        updated = False
-        for record in registrations:
-            media_payload = record.get("payment_media")
-            attachments = self._dicts_to_attachments(media_payload)
-            if not attachments:
-                continue
-            if not any(
-                item.kind == "photo" and not item.preview_base64 for item in attachments
-            ):
-                continue
-            serialised = await self._serialise_payment_media(context, attachments)
-            record["payment_media"] = serialised
-            updated = True
-        return updated
 
     # ------------------------------------------------------------------
     # Registration conversation
@@ -3326,10 +3222,6 @@ class ConfettiTelegramBot:
 
         bot_username = await self._ensure_bot_username(context)
 
-        if isinstance(registrations, list) and registrations:
-            if await self._ensure_payment_previews(context, registrations):
-                self._save_persistent_state()
-
         table_rows = self._build_registration_table_rows(
             registrations,
             bot_username=bot_username,
@@ -3361,7 +3253,7 @@ class ConfettiTelegramBot:
                 "⚠️ Не удалось обновить облачную таблицу. Попробуйте ещё раз позже."
             )
         message_parts.append("")
-        message_parts.append("🖼 Фото оплаты отображаются прямо в колонке таблицы.")
+        message_parts.append("🔗 В столбце «Фото оплаты» размещена кликабельная ссылка на подтверждение платежа.")
 
         await self._reply(
             update,
@@ -3499,8 +3391,6 @@ class ConfettiTelegramBot:
         has_attachments = bool(attachments)
         text_lines: list[str] = []
         link_url: Optional[str] = None
-        preview_formula: Optional[str] = None
-        preview_image: Optional[_XlsxImage] = None
 
         if bot_username and registration_id and has_attachments:
             link_url = f"https://t.me/{bot_username}?start=payment_{registration_id}"
@@ -3523,33 +3413,8 @@ class ConfettiTelegramBot:
 
         cell_text = "\n\n".join(text_lines).strip()
 
-        if has_attachments:
-            primary = attachments[0]
-            preview_blob = (primary.preview_base64 or "").strip()
-            if preview_blob:
-                try:
-                    preview_bytes = base64.b64decode(preview_blob)
-                except (binascii.Error, ValueError):
-                    preview_bytes = b""
-                if preview_bytes:
-                    mime_type = primary.preview_mime or "image/jpeg"
-                    preview_formula = f'=IMAGE("data:{mime_type};base64,{preview_blob}")'
-                    preview_image = _XlsxImage(
-                        data=preview_bytes,
-                        content_type=mime_type,
-                        description="Фото оплаты",
-                    )
-
-        if preview_formula and preview_image is not None:
-            display_text = cell_text or "Фото оплаты"
-            return _XlsxCell(
-                text=display_text,
-                formula=preview_formula,
-                image=preview_image,
-            )
-
         if link_url:
-            return _XlsxCell.hyperlink(cell_text, link_url)
+            return _XlsxCell.hyperlink(cell_text or "Открыть фото оплаты", link_url)
 
         return _XlsxCell(cell_text)
 
