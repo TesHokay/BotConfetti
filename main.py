@@ -4718,6 +4718,9 @@ def main() -> None:  # pragma: no cover - thin wrapper
             pass
 
     logging.basicConfig(level=logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("telegram.ext").setLevel(logging.WARNING)
+    logging.getLogger("telegram.vendor.ptb.urllib3").setLevel(logging.WARNING)
 
     _load_environment_files()
 
