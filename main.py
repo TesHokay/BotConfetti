@@ -4328,6 +4328,10 @@ class _GoogleSheetsExporter:
     DEFAULT_SPREADSHEET_ID = "1DreSJ4xpKFFtcrJN1IJBJ51MOa7_RcqGXAmKYhWSlfA"
     SERVICE_ACCOUNT_JSON_ENV = "CONFETTI_GOOGLE_SERVICE_ACCOUNT_JSON"
     SERVICE_ACCOUNT_FILE_ENV = "CONFETTI_GOOGLE_SERVICE_ACCOUNT_FILE"
+    DEFAULT_SERVICE_ACCOUNT_CANDIDATES: tuple[str, ...] = (
+        "confetti_service_account.json",
+        "service_account.json",
+    )
     SCOPES = (
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive.file",
@@ -4395,6 +4399,36 @@ class _GoogleSheetsExporter:
                         exc,
                     )
                     service_account_info = None
+
+        if service_account_info is None:
+            base_dir = Path(__file__).resolve().parent
+            search_roots = (
+                Path.cwd(),
+                base_dir,
+                base_dir / "data",
+            )
+            for root in search_roots:
+                for filename in cls.DEFAULT_SERVICE_ACCOUNT_CANDIDATES:
+                    candidate = root / filename
+                    if not candidate.exists() or not candidate.is_file():
+                        continue
+                    try:
+                        payload = candidate.read_text(encoding="utf-8")
+                        service_account_info = json.loads(payload)
+                        LOGGER.info(
+                            "Загружен сервисный аккаунт Google из файла %s.",
+                            candidate,
+                        )
+                        break
+                    except (OSError, json.JSONDecodeError) as exc:
+                        LOGGER.warning(
+                            "Не удалось прочитать сервисный аккаунт из файла %s: %s",
+                            candidate,
+                            exc,
+                        )
+                        service_account_info = None
+                if service_account_info is not None:
+                    break
 
         if not service_account_info:
             LOGGER.info(
