@@ -4762,14 +4762,44 @@ def _apply_env_file(path: Path) -> None:
         LOGGER.warning("Failed to read environment file %s: %s", path, exc)
         return
 
+    pending_key: Optional[str] = None
+    pending_quote: Optional[str] = None
+    pending_value_lines: list[str] = []
+
     for line in content.splitlines():
+        if pending_key is not None and pending_quote is not None:
+            pending_value_lines.append(line)
+            if _line_closes_multiline_value(line, pending_quote):
+                closing_line = pending_value_lines[-1].rstrip()
+                closing_line = closing_line[:-1]
+                pending_value_lines[-1] = closing_line
+                value = "\n".join(pending_value_lines)
+                if pending_key not in os.environ:
+                    os.environ[pending_key] = value
+                pending_key = None
+                pending_quote = None
+                pending_value_lines = []
+            continue
+
         parsed = _parse_env_assignment(line)
         if not parsed:
             continue
         key, value = parsed
         if key in os.environ:
             continue
+        if _value_is_multiline_stub(value):
+            pending_key = key
+            pending_quote = value[0]
+            pending_value_lines = [value[1:]]
+            continue
         os.environ[key] = value
+
+    if pending_key is not None and pending_quote is not None:
+        LOGGER.warning(
+            "Environment variable %s appears to have an unterminated multi-line value in %s",
+            pending_key,
+            path,
+        )
 
 
 def _parse_env_assignment(line: str) -> Optional[tuple[str, str]]:
@@ -4798,6 +4828,29 @@ def _parse_env_assignment(line: str) -> Optional[tuple[str, str]]:
         value = value[1:-1]
 
     return key, value
+
+
+def _value_is_multiline_stub(value: str) -> bool:
+    if not value:
+        return False
+    if value[0] not in {'"', "'"}:
+        return False
+    if len(value) == 1:
+        return True
+    return value[-1] != value[0]
+
+
+def _line_closes_multiline_value(line: str, quote: str) -> bool:
+    stripped = line.rstrip()
+    if not stripped.endswith(quote):
+        return False
+    escape_count = 0
+    for char in reversed(stripped[:-1]):
+        if char == "\\":
+            escape_count += 1
+        else:
+            break
+    return escape_count % 2 == 0
 
 
 def _read_token_file(path: Path) -> Optional[str]:
