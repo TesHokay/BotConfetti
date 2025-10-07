@@ -14,6 +14,8 @@ warning which allows the bot to start without the rate limiter.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import warnings
@@ -21,6 +23,7 @@ import os
 import random
 import re
 import sys
+import imghdr
 from datetime import datetime, timedelta
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -176,6 +179,8 @@ class MediaAttachment:
     kind: str
     file_id: str
     caption: Optional[str] = None
+    preview_base64: Optional[str] = None
+    preview_mime: Optional[str] = None
 
 
 @dataclass
@@ -188,7 +193,16 @@ class ContentBlock:
     def copy(self) -> "ContentBlock":
         return ContentBlock(
             text=self.text,
-            media=[MediaAttachment(kind=item.kind, file_id=item.file_id, caption=item.caption) for item in self.media],
+            media=[
+                MediaAttachment(
+                    kind=item.kind,
+                    file_id=item.file_id,
+                    caption=item.caption,
+                    preview_base64=item.preview_base64,
+                    preview_mime=item.preview_mime,
+                )
+                for item in self.media
+            ],
         )
 
 
@@ -1643,13 +1657,7 @@ class ConfettiTelegramBot:
                         reply_markup=self._main_menu_markup_for(update, context),
                     )
                     return
-                sent = await self._send_registrations_excel(update, context)
-                if sent:
-                    await self._reply(
-                        update,
-                        "Экспорт завершён. Таблица отправлена сообщением выше.",
-                        reply_markup=self._admin_menu_markup(),
-                    )
+                await self._admin_share_registrations_table(update, context)
                 return
             if payload.startswith("payment_"):
                 if not self._is_admin_update(update, context):
@@ -2057,6 +2065,8 @@ class ConfettiTelegramBot:
                     "kind": attachment.kind,
                     "file_id": attachment.file_id,
                     "caption": attachment.caption or "",
+                    "preview_base64": attachment.preview_base64 or "",
+                    "preview_mime": attachment.preview_mime or "",
                 }
             )
         return serialised
@@ -2073,7 +2083,17 @@ class ConfettiTelegramBot:
             if not kind or not file_id:
                 continue
             caption = entry.get("caption") or None
-            attachments.append(MediaAttachment(kind=kind, file_id=file_id, caption=caption))
+            preview_base64 = entry.get("preview_base64") or None
+            preview_mime = entry.get("preview_mime") or None
+            attachments.append(
+                MediaAttachment(
+                    kind=kind,
+                    file_id=file_id,
+                    caption=caption,
+                    preview_base64=preview_base64,
+                    preview_mime=preview_mime,
+                )
+            )
         return attachments
 
     async def _serialise_payment_media(
@@ -2088,8 +2108,112 @@ class ConfettiTelegramBot:
                 "file_id": attachment.file_id,
                 "caption": attachment.caption or "",
             }
+            preview_base64 = attachment.preview_base64 or ""
+            preview_mime = attachment.preview_mime or ""
+            if attachment.kind == "photo":
+                if not preview_base64:
+                    preview_payload = await self._download_media_preview(
+                        context, attachment
+                    )
+                    if preview_payload is not None:
+                        preview_bytes, mime_type = preview_payload
+                        preview_base64 = base64.b64encode(preview_bytes).decode("ascii")
+                        preview_mime = mime_type
+                        attachment.preview_base64 = preview_base64
+                        attachment.preview_mime = preview_mime
+                if preview_base64:
+                    entry["preview_base64"] = preview_base64
+                    entry["preview_mime"] = preview_mime or "image/jpeg"
+                else:
+                    entry["preview_base64"] = ""
+                    entry["preview_mime"] = ""
+            else:
+                entry["preview_base64"] = preview_base64
+                entry["preview_mime"] = preview_mime
             serialised.append(entry)
         return serialised
+
+    async def _download_media_preview(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        attachment: MediaAttachment,
+    ) -> Optional[tuple[bytes, str]]:
+        """Fetch the raw bytes for a payment attachment preview."""
+
+        if attachment.kind != "photo":
+            return None
+
+        bot = getattr(context, "bot", None)
+        if bot is None:
+            return None
+
+        try:
+            file = await bot.get_file(attachment.file_id)
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.debug("Не удалось получить файл оплаты %s: %s", attachment.file_id, exc)
+            return None
+
+        try:
+            payload = await file.download_as_bytearray()
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.debug("Не удалось скачать файл оплаты %s: %s", attachment.file_id, exc)
+            return None
+
+        data = bytes(payload)
+        mime_hint = getattr(file, "mime_type", None)
+        file_path = getattr(file, "file_path", None)
+        mime_type = self._resolve_image_mime(data, mime_hint=mime_hint, file_path=file_path)
+        return data, mime_type
+
+    @staticmethod
+    def _resolve_image_mime(
+        data: bytes,
+        *,
+        mime_hint: Optional[str] = None,
+        file_path: Optional[str] = None,
+    ) -> str:
+        if mime_hint and mime_hint.startswith("image/"):
+            return mime_hint
+
+        if file_path:
+            extension = Path(str(file_path)).suffix.lower()
+            mapping = {
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".png": "image/png",
+                ".gif": "image/gif",
+            }
+            if extension in mapping:
+                return mapping[extension]
+
+        detected = imghdr.what(None, data)
+        if detected == "png":
+            return "image/png"
+        if detected in {"gif", "tiff", "bmp"}:
+            return f"image/{detected}"
+        return "image/jpeg"
+
+    async def _ensure_payment_previews(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        registrations: list[dict[str, Any]],
+    ) -> bool:
+        """Populate missing previews for historical payment attachments."""
+
+        updated = False
+        for record in registrations:
+            media_payload = record.get("payment_media")
+            attachments = self._dicts_to_attachments(media_payload)
+            if not attachments:
+                continue
+            if not any(
+                item.kind == "photo" and not item.preview_base64 for item in attachments
+            ):
+                continue
+            serialised = await self._serialise_payment_media(context, attachments)
+            record["payment_media"] = serialised
+            updated = True
+        return updated
 
     # ------------------------------------------------------------------
     # Registration conversation
@@ -3202,6 +3326,10 @@ class ConfettiTelegramBot:
 
         bot_username = await self._ensure_bot_username(context)
 
+        if isinstance(registrations, list) and registrations:
+            if await self._ensure_payment_previews(context, registrations):
+                self._save_persistent_state()
+
         table_rows = self._build_registration_table_rows(
             registrations,
             bot_username=bot_username,
@@ -3210,10 +3338,8 @@ class ConfettiTelegramBot:
             context,
             table_rows,
         )
-        exporter = self._ensure_google_sheets_exporter()
         sheet_url = await self._sync_google_sheet(table_rows)
         preview_lines = self._format_registrations_preview(registrations)
-        deeplink = await self._build_registrations_deeplink(context)
 
         message_parts = [
             "📊 Экспорт заявок готов!\n",
@@ -3223,41 +3349,24 @@ class ConfettiTelegramBot:
         if preview_lines:
             message_parts.append("")
             message_parts.extend(preview_lines)
-        message_parts.append("")
-        message_parts.append(
-            "🔗 В столбце «Фото оплаты» размещена кликабельная ссылка на подтверждение платежа."
-        )
         if sheet_url:
             message_parts.append("")
             message_parts.append(f"🌐 Живая таблица: {sheet_url}")
             message_parts.append(
                 "Ссылка ведёт на Google Sheets с актуальными данными — обновляется автоматически после экспорта."
             )
-            if exporter and exporter.service_account_email:
-                message_parts.append(
-                    f"🔑 Если доступа нет, поделитесь таблицей с аккаунтом {exporter.service_account_email}."
-                )
-        if deeplink:
+        else:
             message_parts.append("")
-            message_parts.append(f"🔗 Таблица: {deeplink}")
             message_parts.append(
-                "Нажмите ссылку, чтобы в любой момент получить свежую версию."
+                "⚠️ Не удалось обновить облачную таблицу. Попробуйте ещё раз позже."
             )
         message_parts.append("")
-        message_parts.append(
-            "🔽 Файл с таблицей отправлен ниже. Сохраните его в «Избранном» для быстрого доступа."
-        )
+        message_parts.append("🖼 Фото оплаты отображаются прямо в колонке таблицы.")
 
         await self._reply(
             update,
             "\n".join(message_parts),
             reply_markup=self._admin_menu_markup(),
-        )
-        await self._send_registrations_excel(
-            update,
-            context,
-            path=export_path,
-            generated_at=generated_at,
         )
 
     def _build_registration_table_rows(
@@ -3390,6 +3499,8 @@ class ConfettiTelegramBot:
         has_attachments = bool(attachments)
         text_lines: list[str] = []
         link_url: Optional[str] = None
+        preview_formula: Optional[str] = None
+        preview_image: Optional[_XlsxImage] = None
 
         if bot_username and registration_id and has_attachments:
             link_url = f"https://t.me/{bot_username}?start=payment_{registration_id}"
@@ -3411,6 +3522,31 @@ class ConfettiTelegramBot:
             text_lines.extend(self._describe_attachment(item) for item in extra_attachments)
 
         cell_text = "\n\n".join(text_lines).strip()
+
+        if has_attachments:
+            primary = attachments[0]
+            preview_blob = (primary.preview_base64 or "").strip()
+            if preview_blob:
+                try:
+                    preview_bytes = base64.b64decode(preview_blob)
+                except (binascii.Error, ValueError):
+                    preview_bytes = b""
+                if preview_bytes:
+                    mime_type = primary.preview_mime or "image/jpeg"
+                    preview_formula = f'=IMAGE("data:{mime_type};base64,{preview_blob}")'
+                    preview_image = _XlsxImage(
+                        data=preview_bytes,
+                        content_type=mime_type,
+                        description="Фото оплаты",
+                    )
+
+        if preview_formula and preview_image is not None:
+            display_text = cell_text or "Фото оплаты"
+            return _XlsxCell(
+                text=display_text,
+                formula=preview_formula,
+                image=preview_image,
+            )
 
         if link_url:
             return _XlsxCell.hyperlink(cell_text, link_url)
@@ -3453,77 +3589,6 @@ class ConfettiTelegramBot:
 
         self._bot_username = username
         return username
-
-    async def _build_registrations_deeplink(
-        self, context: ContextTypes.DEFAULT_TYPE
-    ) -> Optional[str]:
-        username = await self._ensure_bot_username(context)
-        if not username:
-            return None
-        return f"https://t.me/{username}?start=registrations_excel"
-
-    async def _send_registrations_excel(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        *,
-        path: Optional[Path] = None,
-        generated_at: Optional[str] = None,
-    ) -> bool:
-        chat = update.effective_chat
-        if chat is None:
-            return False
-
-        await self._purge_expired_registrations(context)
-        registrations = self._application_data(context).get("registrations", [])
-        if path is None or generated_at is None:
-            if not isinstance(registrations, list) or not registrations:
-                await self._reply(
-                    update,
-                    "Заявок пока нет.",
-                    reply_markup=self._admin_menu_markup(),
-                )
-                return False
-            bot_username = await self._ensure_bot_username(context)
-            table_rows = self._build_registration_table_rows(
-                registrations,
-                bot_username=bot_username,
-            )
-            path, generated_at = self._export_registrations_excel(
-                context,
-                table_rows,
-            )
-            await self._sync_google_sheet(table_rows)
-
-        try:
-            chat_id = _coerce_chat_id_from_object(chat)
-        except ValueError:
-            return False
-
-        caption = (
-            "📊 Таблица заявок студии «Конфетти»\n"
-            f"Обновлено: {generated_at}\n"
-            "Документ включает все заявки и обновляется при каждом экспорте.\n"
-            "В колонке «Фото оплаты» находится ссылка на подтверждение платежа."
-        )
-
-        try:
-            with path.open("rb") as handle:
-                await context.bot.send_document(
-                    chat_id=chat_id,
-                    document=handle,
-                    filename=path.name,
-                    caption=caption,
-                    read_timeout=120,
-                    write_timeout=120,
-                    connect_timeout=30,
-                    pool_timeout=30,
-                )
-        except Exception as exc:  # pragma: no cover - network dependent
-            LOGGER.warning("Не удалось отправить таблицу заявок: %s", exc)
-            return False
-
-        return True
 
     async def _send_registration_payment_media(
         self,
