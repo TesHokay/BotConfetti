@@ -26,8 +26,19 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union
 from xml.sax.saxutils import escape
+
+try:  # pragma: no cover - optional dependency
+    from google.auth.transport.requests import Request as GoogleAuthRequest
+    from google.oauth2.credentials import Credentials as GoogleOAuthCredentials
+    from googleapiclient.discovery import build as google_build
+    from googleapiclient.errors import HttpError as GoogleHttpError
+except ModuleNotFoundError:  # pragma: no cover - handled at runtime
+    GoogleAuthRequest = None  # type: ignore[assignment]
+    GoogleOAuthCredentials = None  # type: ignore[assignment]
+    google_build = None  # type: ignore[assignment]
+    GoogleHttpError = Exception  # type: ignore[assignment]
 
 TELEGRAM_IMPORT_ERROR: ModuleNotFoundError | None = None
 
@@ -558,6 +569,8 @@ class ConfettiTelegramBot:
             self._runtime_admin_ids.update(dynamic_admins)
         self._storage_dirty = False
         self._bot_username: Optional[str] = None
+        self._google_sheets_exporter = _GoogleSheetsExporter.from_env()
+        self._last_google_sheet_url: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -3187,11 +3200,15 @@ class ConfettiTelegramBot:
 
         bot_username = await self._ensure_bot_username(context)
 
-        export_path, generated_at = self._export_registrations_excel(
-            context,
+        table_rows = self._build_registration_table_rows(
             registrations,
             bot_username=bot_username,
         )
+        export_path, generated_at = self._export_registrations_excel(
+            context,
+            table_rows,
+        )
+        sheet_url = await self._sync_google_sheet(table_rows)
         preview_lines = self._format_registrations_preview(registrations)
         deeplink = await self._build_registrations_deeplink(context)
 
@@ -3207,6 +3224,12 @@ class ConfettiTelegramBot:
         message_parts.append(
             "🔗 В столбце «Фото оплаты» размещена кликабельная ссылка на подтверждение платежа."
         )
+        if sheet_url:
+            message_parts.append("")
+            message_parts.append(f"🌐 Живая таблица: {sheet_url}")
+            message_parts.append(
+                "Ссылка ведёт на Google Sheets с актуальными данными — обновляется автоматически после экспорта."
+            )
         if deeplink:
             message_parts.append("")
             message_parts.append(f"🔗 Таблица: {deeplink}")
@@ -3230,17 +3253,12 @@ class ConfettiTelegramBot:
             generated_at=generated_at,
         )
 
-    def _export_registrations_excel(
+    def _build_registration_table_rows(
         self,
-        context: ContextTypes.DEFAULT_TYPE,
         registrations: list[dict[str, Any]],
         *,
-        bot_username: Optional[str] = None,
-    ) -> tuple[Path, str]:
-        builder = _SimpleXlsxBuilder(
-            sheet_name="Заявки",
-            column_widths=self.EXPORT_COLUMN_WIDTHS,
-        )
+        bot_username: Optional[str],
+    ) -> list[list[_XlsxCell]]:
         header = (
             "Дата заявки",
             "Программа",
@@ -3251,7 +3269,17 @@ class ConfettiTelegramBot:
             "Фото оплаты",
             "Отправитель",
         )
-        builder.add_row(header)
+
+        def make_cell(value: Any) -> _XlsxCell:
+            if isinstance(value, _XlsxCell):
+                return value
+            if value is None:
+                return _XlsxCell("")
+            return _XlsxCell(str(value))
+
+        rows: list[list[_XlsxCell]] = [
+            [make_cell(title) for title in header]
+        ]
 
         for record in registrations:
             payment_entries = self._dicts_to_attachments(record.get("payment_media"))
@@ -3264,18 +3292,33 @@ class ConfettiTelegramBot:
                 payment_note=payment_note,
             )
 
-            builder.add_row(
-                (
-                    record.get("created_at") or "",
-                    record.get("program") or "",
-                    record.get("child_name") or "",
-                    record.get("class") or "",
-                    record.get("phone") or "",
-                    record.get("time") or "",
-                    photo_cell,
-                    record.get("submitted_by") or "",
-                )
+            rows.append(
+                [
+                    make_cell(record.get("created_at") or ""),
+                    make_cell(record.get("program") or ""),
+                    make_cell(record.get("child_name") or ""),
+                    make_cell(record.get("class") or ""),
+                    make_cell(record.get("phone") or ""),
+                    make_cell(record.get("time") or ""),
+                    make_cell(photo_cell),
+                    make_cell(record.get("submitted_by") or ""),
+                ]
             )
+
+        return rows
+
+    def _export_registrations_excel(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        table_rows: Sequence[Sequence[_XlsxCell]],
+    ) -> tuple[Path, str]:
+        builder = _SimpleXlsxBuilder(
+            sheet_name="Заявки",
+            column_widths=self.EXPORT_COLUMN_WIDTHS,
+        )
+
+        for row in table_rows:
+            builder.add_row(row)
 
         generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
         export_path = Path("data") / "exports" / "confetti_registrations.xlsx"
@@ -3295,6 +3338,39 @@ class ConfettiTelegramBot:
         self._save_persistent_state()
 
         return export_path, generated_at
+
+    def _ensure_google_sheets_exporter(self) -> Optional["_GoogleSheetsExporter"]:
+        if self._google_sheets_exporter is not None:
+            return self._google_sheets_exporter
+        exporter = _GoogleSheetsExporter.from_env()
+        self._google_sheets_exporter = exporter
+        return exporter
+
+    async def _sync_google_sheet(
+        self,
+        table_rows: Sequence[Sequence[_XlsxCell]],
+    ) -> Optional[str]:
+        exporter = self._ensure_google_sheets_exporter()
+        if exporter is None:
+            return None
+
+        loop = asyncio.get_running_loop()
+        try:
+            url = await loop.run_in_executor(
+                None,
+                exporter.sync,
+                table_rows,
+                tuple(self.EXPORT_COLUMN_WIDTHS),
+            )
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Не удалось обновить Google Sheets: %s", exc)
+            return None
+
+        if url:
+            self._last_google_sheet_url = url
+            return url
+
+        return self._last_google_sheet_url
 
     def _build_payment_link_cell(
         self,
@@ -3402,11 +3478,15 @@ class ConfettiTelegramBot:
                 )
                 return False
             bot_username = await self._ensure_bot_username(context)
-            path, generated_at = self._export_registrations_excel(
-                context,
+            table_rows = self._build_registration_table_rows(
                 registrations,
                 bot_username=bot_username,
             )
+            path, generated_at = self._export_registrations_excel(
+                context,
+                table_rows,
+            )
+            await self._sync_google_sheet(table_rows)
 
         try:
             chat_id = _coerce_chat_id_from_object(chat)
@@ -4208,6 +4288,260 @@ class _SimpleXlsxBuilder:
         if value is None:
             return _XlsxCell("")
         return _XlsxCell(str(value))
+
+
+class _GoogleSheetsExporter:
+    """Synchronise admin exports with a Google Sheets document."""
+
+    DEFAULT_SPREADSHEET_ID = "1DreSJ4xpKFFtcrJN1IJBJ51MOa7_RcqGXAmKYhWSlfA"
+    SCOPES = (
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
+    )
+
+    def __init__(self, spreadsheet_id: str, credentials: GoogleOAuthCredentials) -> None:
+        self.spreadsheet_id = spreadsheet_id
+        self._credentials = credentials
+        self._service: Optional[Any] = None
+        self._sheet_id: Optional[int] = None
+        self._sheet_title: Optional[str] = None
+        self._spreadsheet_url: Optional[str] = None
+
+    @classmethod
+    def from_env(cls) -> Optional["_GoogleSheetsExporter"]:
+        if (
+            GoogleOAuthCredentials is None
+            or google_build is None
+            or GoogleAuthRequest is None
+        ):
+            LOGGER.info(
+                "Библиотеки Google Sheets не установлены или недоступны, экспорт будет только в XLSX."
+            )
+            return None
+
+        client_id = os.environ.get("CONFETTI_GOOGLE_OAUTH_CLIENT_ID")
+        client_secret = os.environ.get("CONFETTI_GOOGLE_OAUTH_CLIENT_SECRET")
+        refresh_token = os.environ.get("CONFETTI_GOOGLE_OAUTH_REFRESH_TOKEN")
+        if not all((client_id, client_secret, refresh_token)):
+            LOGGER.info(
+                "OAuth-учётные данные Google не заданы, пропускаем синхронизацию Google Sheets."
+            )
+            return None
+
+        spreadsheet_id = os.environ.get("CONFETTI_GOOGLE_SHEETS_ID")
+        if spreadsheet_id:
+            spreadsheet_id = spreadsheet_id.strip()
+        if not spreadsheet_id:
+            spreadsheet_id = cls.DEFAULT_SPREADSHEET_ID
+
+        credentials = GoogleOAuthCredentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=cls.SCOPES,
+        )
+
+        return cls(spreadsheet_id, credentials)
+
+    def sync(
+        self,
+        rows: Sequence[Sequence[_XlsxCell]],
+        column_widths: Sequence[float],
+    ) -> Optional[str]:
+        if not rows:
+            return self._spreadsheet_url or self._build_spreadsheet_url()
+
+        service = self._build_service()
+        self._ensure_sheet_metadata(service)
+
+        sheet_title = self._sheet_title or "Заявки"
+        escaped_title = sheet_title.replace("'", "''")
+        clear_range = f"'{escaped_title}'"
+        update_range = f"'{escaped_title}'!A1"
+
+        normalised_rows = [self._normalise_row(row) for row in rows]
+        values = [
+            [cell.formula if cell.formula else cell.text for cell in row]
+            for row in normalised_rows
+        ]
+
+        try:
+            service.spreadsheets().values().clear(
+                spreadsheetId=self.spreadsheet_id,
+                range=clear_range,
+            ).execute()
+            service.spreadsheets().values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=update_range,
+                valueInputOption="USER_ENTERED",
+                body={"values": values},
+            ).execute()
+            column_count = max(len(row) for row in normalised_rows)
+            self._apply_formatting(service, column_count, column_widths)
+        except GoogleHttpError as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Ошибка обновления Google Sheets: %s", exc)
+            return None
+
+        return self._spreadsheet_url or self._build_spreadsheet_url()
+
+    def _build_service(self) -> Any:
+        if self._service is not None:
+            return self._service
+
+        try:
+            self._credentials.refresh(GoogleAuthRequest())
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Не удалось обновить OAuth-токен Google: %s", exc)
+            raise
+
+        self._service = google_build(
+            "sheets",
+            "v4",
+            credentials=self._credentials,
+            cache_discovery=False,
+        )
+        return self._service
+
+    def _ensure_sheet_metadata(self, service: Any) -> None:
+        if self._sheet_title and self._sheet_id is not None and self._spreadsheet_url:
+            return
+
+        try:
+            metadata = service.spreadsheets().get(
+                spreadsheetId=self.spreadsheet_id,
+            ).execute()
+        except GoogleHttpError as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Не удалось получить свойства Google Sheets: %s", exc)
+            raise
+
+        self._spreadsheet_url = metadata.get("spreadsheetUrl")
+        sheets = metadata.get("sheets") or []
+        preferred = "Заявки"
+        fallback: Optional[dict[str, Any]] = None
+        for sheet in sheets:
+            props = sheet.get("properties") or {}
+            if fallback is None:
+                fallback = props
+            if props.get("title") == preferred:
+                self._sheet_id = props.get("sheetId")
+                self._sheet_title = props.get("title")
+                break
+        else:
+            if fallback:
+                self._sheet_id = fallback.get("sheetId")
+                self._sheet_title = fallback.get("title")
+
+        if self._sheet_title is None:
+            self._sheet_title = preferred
+
+    def _apply_formatting(
+        self,
+        service: Any,
+        column_count: int,
+        column_widths: Sequence[float],
+    ) -> None:
+        if self._sheet_id is None or column_count <= 0:
+            return
+
+        requests: list[dict[str, Any]] = [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": self._sheet_id,
+                        "gridProperties": {"frozenRowCount": 1},
+                    },
+                    "fields": "gridProperties.frozenRowCount",
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": self._sheet_id,
+                        "startRowIndex": 0,
+                        "endRowIndex": 1,
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "textFormat": {"bold": True},
+                            "horizontalAlignment": "CENTER",
+                            "wrapStrategy": "WRAP",
+                        }
+                    },
+                    "fields": "userEnteredFormat(textFormat,horizontalAlignment,wrapStrategy)",
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": self._sheet_id,
+                        "startRowIndex": 1,
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "wrapStrategy": "WRAP",
+                        }
+                    },
+                    "fields": "userEnteredFormat.wrapStrategy",
+                }
+            },
+        ]
+
+        width_values = list(column_widths)
+        for index in range(column_count):
+            if width_values:
+                base_width = width_values[index] if index < len(width_values) else width_values[-1]
+            else:
+                base_width = 20.0
+            requests.append(
+                {
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": self._sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": index,
+                            "endIndex": index + 1,
+                        },
+                        "properties": {"pixelSize": self._column_width_to_pixels(base_width)},
+                        "fields": "pixelSize",
+                    }
+                }
+            )
+
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=self.spreadsheet_id,
+                body={"requests": requests},
+            ).execute()
+        except GoogleHttpError:  # pragma: no cover - network dependent
+            LOGGER.debug("Не удалось применить форматирование для Google Sheets.")
+
+    @staticmethod
+    def _column_width_to_pixels(width: float) -> int:
+        width = max(width, 1.0)
+        return max(int(round(width * 7 + 5)), 40)
+
+    @staticmethod
+    def _build_spreadsheet_url_from_id(spreadsheet_id: str) -> str:
+        return f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+
+    def _build_spreadsheet_url(self) -> str:
+        return self._spreadsheet_url or self._build_spreadsheet_url_from_id(self.spreadsheet_id)
+
+    @staticmethod
+    def _normalise_row(row: Sequence[_XlsxCell]) -> list[_XlsxCell]:
+        normalised: list[_XlsxCell] = []
+        for cell in row:
+            if isinstance(cell, _XlsxCell):
+                normalised.append(cell)
+            elif isinstance(cell, _XlsxImage):
+                normalised.append(_XlsxCell("", image=cell))
+            elif cell is None:
+                normalised.append(_XlsxCell(""))
+            else:
+                normalised.append(_XlsxCell(str(cell)))
+        return normalised
 
 
 def _normalise_admin_chat_ids(chat_ids: AdminChatIdsInput) -> frozenset[int]:
