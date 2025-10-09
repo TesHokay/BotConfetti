@@ -1503,12 +1503,7 @@ class ConfettiTelegramBot:
         if not removed:
             return
 
-        profiles_changed = False
-        for record in removed:
-            if self._remove_user_registration_snapshot(record):
-                profiles_changed = True
-
-        if profiles_changed or removed:
+        if removed:
             self._save_persistent_state()
 
 
@@ -3239,7 +3234,7 @@ class ConfettiTelegramBot:
             context,
             table_rows,
         )
-        sheet_url = await self._sync_google_sheet(table_rows)
+        sheet_result = await self._sync_google_sheet(table_rows)
         preview_lines = self._format_registrations_preview(registrations)
 
         message_parts = [
@@ -3250,16 +3245,21 @@ class ConfettiTelegramBot:
         if preview_lines:
             message_parts.append("")
             message_parts.extend(preview_lines)
-        if sheet_url:
+        if sheet_result.url:
             message_parts.append("")
-            message_parts.append(f"🌐 Живая таблица: {sheet_url}")
-            message_parts.append(
-                "Ссылка ведёт на Google Sheets с актуальными данными — обновляется автоматически после экспорта."
-            )
+            message_parts.append(f"🌐 Живая таблица: {sheet_result.url}")
+            if sheet_result.updated:
+                message_parts.append(
+                    "Таблица обновлена автоматически и содержит актуальные данные."
+                )
+            else:
+                message_parts.append(
+                    "⚠️ Не удалось обновить таблицу автоматически. Проверьте доступ Google Sheets; ссылка ведёт на последнюю доступную версию."
+                )
         else:
             message_parts.append("")
             message_parts.append(
-                "⚠️ Не удалось обновить облачную таблицу. Попробуйте ещё раз позже."
+                "⚠️ Облачная таблица недоступна: проверьте настройки сервисного аккаунта."
             )
         message_parts.append("")
         message_parts.append(
@@ -3368,10 +3368,10 @@ class ConfettiTelegramBot:
     async def _sync_google_sheet(
         self,
         table_rows: Sequence[Sequence[_XlsxCell]],
-    ) -> Optional[str]:
+    ) -> _GoogleSheetSyncResult:
         exporter = self._ensure_google_sheets_exporter()
         if exporter is None:
-            return None
+            return _GoogleSheetSyncResult(url=None, updated=False)
 
         loop = asyncio.get_running_loop()
         try:
@@ -3383,13 +3383,22 @@ class ConfettiTelegramBot:
             )
         except Exception as exc:  # pragma: no cover - network dependent
             LOGGER.warning("Не удалось обновить Google Sheets: %s", exc)
-            return None
+            fallback_url = self._last_google_sheet_url or exporter.url
+            if fallback_url:
+                self._last_google_sheet_url = fallback_url
+            return _GoogleSheetSyncResult(url=fallback_url, updated=False, error=str(exc))
 
         if url:
             self._last_google_sheet_url = url
-            return url
+            return _GoogleSheetSyncResult(url=url, updated=True)
 
-        return self._last_google_sheet_url
+        if self._last_google_sheet_url:
+            return _GoogleSheetSyncResult(url=self._last_google_sheet_url, updated=True)
+
+        fallback_url = exporter.url
+        if fallback_url:
+            self._last_google_sheet_url = fallback_url
+        return _GoogleSheetSyncResult(url=fallback_url, updated=True)
 
     def _build_payment_link_cell(
         self,
@@ -4322,6 +4331,13 @@ class _SimpleXlsxBuilder:
         return _XlsxCell(str(value))
 
 
+@dataclass
+class _GoogleSheetSyncResult:
+    url: Optional[str]
+    updated: bool
+    error: Optional[str] = None
+
+
 class _GoogleSheetsExporter:
     """Synchronise admin exports with a Google Sheets document."""
 
@@ -4642,6 +4658,10 @@ class _GoogleSheetsExporter:
 
     def _build_spreadsheet_url(self) -> str:
         return self._spreadsheet_url or self._build_spreadsheet_url_from_id(self.spreadsheet_id)
+
+    @property
+    def url(self) -> str:
+        return self._build_spreadsheet_url()
 
     @staticmethod
     def _normalise_row(row: Sequence[_XlsxCell]) -> list[_XlsxCell]:
