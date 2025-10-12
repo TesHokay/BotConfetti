@@ -14,22 +14,33 @@ warning which allows the bot to start without the rate limiter.
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 import warnings
-import mimetypes
 import os
 import random
 import re
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union
 from xml.sax.saxutils import escape
 
+try:  # pragma: no cover - optional dependency
+    from google.auth.transport.requests import Request as GoogleAuthRequest
+    from google.oauth2.service_account import (
+        Credentials as GoogleServiceAccountCredentials,
+    )
+    from googleapiclient.discovery import build as google_build
+    from googleapiclient.errors import HttpError as GoogleHttpError
+except ModuleNotFoundError:  # pragma: no cover - handled at runtime
+    GoogleAuthRequest = None  # type: ignore[assignment]
+    GoogleServiceAccountCredentials = None  # type: ignore[assignment]
+    google_build = None  # type: ignore[assignment]
+    GoogleHttpError = Exception  # type: ignore[assignment]
 
 TELEGRAM_IMPORT_ERROR: ModuleNotFoundError | None = None
 
@@ -48,12 +59,23 @@ class _MissingTelegramModule:
         raise RuntimeError(_TELEGRAM_DEPENDENCY_INSTRUCTIONS)
 
 
-try:  # pragma: no cover - optional dependency
-    import gspread
-    from google.oauth2.service_account import Credentials
-except ModuleNotFoundError:  # pragma: no cover - optional dependency
-    gspread = None  # type: ignore[assignment]
-    Credentials = None  # type: ignore[assignment]
+@dataclass
+class Chat:
+    id: int
+    type: str = "private"
+    title: Optional[str] = None
+
+
+@dataclass
+class User:
+    id: int
+    full_name: str = ""
+
+
+@dataclass
+class Update:
+    effective_chat: Optional[Chat] = None
+    effective_user: Optional[User] = None
 
 
 if TYPE_CHECKING:
@@ -96,7 +118,6 @@ else:  # pragma: no cover - import depends on environment
             KeyboardButton,
             ReplyKeyboardMarkup,
             ReplyKeyboardRemove,
-            Update,
         )
         from telegram.error import InvalidToken as TelegramInvalidToken
         from telegram.error import NetworkError as TelegramNetworkError
@@ -113,7 +134,7 @@ else:  # pragma: no cover - import depends on environment
         )
     except ModuleNotFoundError as exc:  # pragma: no cover - environment specific
         TELEGRAM_IMPORT_ERROR = exc
-        InlineKeyboardButton = InlineKeyboardMarkup = KeyboardButton = ReplyKeyboardMarkup = ReplyKeyboardRemove = Update = object  # type: ignore[assignment]
+        InlineKeyboardButton = InlineKeyboardMarkup = KeyboardButton = ReplyKeyboardMarkup = ReplyKeyboardRemove = object  # type: ignore[assignment]
         InputMediaAnimation = InputMediaDocument = InputMediaPhoto = InputMediaVideo = object  # type: ignore[assignment]
         Application = ApplicationBuilder = CommandHandler = ConversationHandler = MessageHandler = object  # type: ignore[assignment]
         ContextTypes = object  # type: ignore[assignment]
@@ -155,6 +176,8 @@ class MediaAttachment:
     kind: str
     file_id: str
     caption: Optional[str] = None
+    preview_base64: Optional[str] = None
+    preview_mime: Optional[str] = None
 
 
 @dataclass
@@ -167,7 +190,16 @@ class ContentBlock:
     def copy(self) -> "ContentBlock":
         return ContentBlock(
             text=self.text,
-            media=[MediaAttachment(kind=item.kind, file_id=item.file_id, caption=item.caption) for item in self.media],
+            media=[
+                MediaAttachment(
+                    kind=item.kind,
+                    file_id=item.file_id,
+                    caption=item.caption,
+                    preview_base64=item.preview_base64,
+                    preview_mime=item.preview_mime,
+                )
+                for item in self.media
+            ],
         )
 
 
@@ -270,236 +302,6 @@ class BotContent:
             vocabulary=[entry.copy() for entry in self.vocabulary],
         )
 
-
-class SheetsBackendError(RuntimeError):
-    """Raised when the cloud spreadsheet backend cannot be used."""
-
-
-@dataclass
-class GoogleSheetsBackend:
-    """Thin wrapper around Google Sheets for storing registrations."""
-
-    sheet_id: str
-    credentials: Any
-    worksheet_title: str = "Заявки"
-    _client: Any | None = field(init=False, default=None, repr=False)
-    _spreadsheet: Any | None = field(init=False, default=None, repr=False)
-    _worksheet: Any | None = field(init=False, default=None, repr=False)
-    _worksheet_id: Optional[int] = field(init=False, default=None, repr=False)
-    _lock: asyncio.Lock = field(init=False, repr=False)
-
-    HEADERS: tuple[str, ...] = (
-        "ID",
-        "Дата заявки",
-        "Программа",
-        "Участник",
-        "Класс / возраст",
-        "Телефон",
-        "Предпочтительное время",
-        "Комментарий оплаты",
-        "Статус оплаты",
-        "Фото оплаты",
-        "Отправитель",
-        "Чат",
-    )
-
-    COLUMN_WIDTHS: tuple[int, ...] = (
-        140,
-        220,
-        320,
-        280,
-        200,
-        200,
-        220,
-        260,
-        200,
-        280,
-        220,
-        240,
-    )
-
-    IMAGE_COLUMN_INDEX: int = HEADERS.index("Фото оплаты") + 1
-
-    def __post_init__(self) -> None:
-        if gspread is None or Credentials is None:  # pragma: no cover - depends on optional deps
-            raise SheetsBackendError(
-                "Библиотека gspread не установлена. Установите 'gspread' и 'google-auth'."
-            )
-        self._lock = asyncio.Lock()
-
-    async def ensure_ready(self) -> None:
-        async with self._lock:
-            if self._worksheet is not None:
-                return
-            await asyncio.to_thread(self._initialise)
-
-    async def append_registration(
-        self,
-        record: dict[str, Any],
-        *,
-        payment_status: str,
-        image_value: Optional[str] = None,
-    ) -> int:
-        await self.ensure_ready()
-        return await asyncio.to_thread(
-            self._append_row_sync,
-            record,
-            payment_status,
-            image_value,
-        )
-
-    async def delete_registration(self, registration_id: str) -> None:
-        await self.ensure_ready()
-        await asyncio.to_thread(self._delete_row_sync, registration_id)
-
-    async def update_registration_image(
-        self,
-        registration_id: str,
-        image_value: Optional[str],
-    ) -> None:
-        await self.ensure_ready()
-        await asyncio.to_thread(self._update_image_sync, registration_id, image_value)
-
-    async def link(self) -> str:
-        await self.ensure_ready()
-        gid = self._worksheet_id or 0
-        return f"https://docs.google.com/spreadsheets/d/{self.sheet_id}/edit#gid={gid}"
-
-    @property
-    def service_account_email(self) -> Optional[str]:
-        return getattr(self.credentials, "service_account_email", None)
-
-    # ------------------------------------------------------------------
-    # Internal helpers (run in a thread pool)
-
-    def _initialise(self) -> None:
-        assert gspread is not None
-        client = gspread.authorize(self.credentials)
-        spreadsheet = client.open_by_key(self.sheet_id)
-        try:
-            worksheet = spreadsheet.worksheet(self.worksheet_title)
-        except gspread.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(
-                title=self.worksheet_title,
-                rows="200",
-                cols=str(len(self.HEADERS)),
-            )
-        self._client = client
-        self._spreadsheet = spreadsheet
-        self._worksheet = worksheet
-        self._worksheet_id = getattr(worksheet, "id", None)
-        self._prepare_worksheet()
-
-    def _prepare_worksheet(self) -> None:
-        assert self._worksheet is not None
-        existing = self._worksheet.row_values(1)
-        if [item.strip() for item in existing] != list(self.HEADERS):
-            self._worksheet.update("A1", [list(self.HEADERS)])
-
-        if self._spreadsheet is not None and self._worksheet_id is not None:
-            requests: list[dict[str, Any]] = [
-                {
-                    "updateSheetProperties": {
-                        "properties": {
-                            "sheetId": self._worksheet_id,
-                            "gridProperties": {"frozenRowCount": 1},
-                        },
-                        "fields": "gridProperties.frozenRowCount",
-                    }
-                }
-            ]
-            for index, width in enumerate(self.COLUMN_WIDTHS):
-                requests.append(
-                    {
-                        "updateDimensionProperties": {
-                            "range": {
-                                "sheetId": self._worksheet_id,
-                                "dimension": "COLUMNS",
-                                "startIndex": index,
-                                "endIndex": index + 1,
-                            },
-                            "properties": {"pixelSize": width},
-                            "fields": "pixelSize",
-                        }
-                    }
-                )
-            self._spreadsheet.batch_update({"requests": requests})
-
-    def _append_row_sync(
-        self,
-        record: dict[str, Any],
-        payment_status: str,
-        image_value: Optional[str],
-    ) -> int:
-        assert self._worksheet is not None
-        values = [
-            record.get("id") or "",
-            record.get("created_at") or "",
-            record.get("program") or "",
-            record.get("child_name") or "",
-            record.get("class") or "",
-            record.get("phone") or "",
-            record.get("time") or "",
-            record.get("payment_note") or "",
-            payment_status,
-            "",
-            record.get("submitted_by") or "",
-            record.get("chat_title") or "",
-        ]
-        response = self._worksheet.append_row(values, value_input_option="USER_ENTERED")
-        row_number = self._row_from_response(response, record.get("id"))
-        if image_value is not None:
-            self._worksheet.update_cell(row_number, self.IMAGE_COLUMN_INDEX, image_value)
-        return row_number
-
-    def _row_from_response(self, response: Any, registration_id: Any) -> int:
-        assert self._worksheet is not None
-        if isinstance(response, dict):
-            updates = response.get("updates")
-            if isinstance(updates, dict):
-                updated_range = updates.get("updatedRange")
-                if isinstance(updated_range, str):
-                    match = re.search(r"[A-Z]+(\d+)", updated_range.split("!")[-1])
-                    if match:
-                        try:
-                            return int(match.group(1))
-                        except ValueError:
-                            pass
-        if registration_id:
-            try:
-                cell = self._worksheet.find(str(registration_id))
-                if cell is not None:
-                    return cell.row
-            except Exception:  # pragma: no cover - depends on Sheets API
-                pass
-        return self._worksheet.row_count
-
-    def _delete_row_sync(self, registration_id: str) -> None:
-        assert self._worksheet is not None
-        try:
-            cell = self._worksheet.find(registration_id)
-        except Exception:  # pragma: no cover - network dependent
-            cell = None
-        if cell is not None:
-            try:
-                self._worksheet.delete_rows(cell.row)
-            except Exception:  # pragma: no cover - network dependent
-                LOGGER.warning("Не удалось удалить строку %s из Google Sheets", cell.row)
-
-    def _update_image_sync(self, registration_id: str, image_value: Optional[str]) -> None:
-        assert self._worksheet is not None
-        try:
-            cell = self._worksheet.find(registration_id)
-        except Exception:  # pragma: no cover - network dependent
-            cell = None
-        if cell is None:
-            return
-        if image_value is not None:
-            self._worksheet.update_cell(cell.row, self.IMAGE_COLUMN_INDEX, image_value)
-        else:
-            self._worksheet.update_cell(cell.row, self.IMAGE_COLUMN_INDEX, "")
-
-
 @dataclass
 class ConfettiTelegramBot:
     """Light-weight wrapper around the PTB application builder."""
@@ -527,7 +329,6 @@ class ConfettiTelegramBot:
     MAIN_MENU_BUTTON = "⬅️ Главное меню"
     REGISTRATION_BUTTON = "📝 Запись"
     CANCELLATION_BUTTON = "❗️ Отменить занятие"
-    REGISTRATION_SKIP_PAYMENT_BUTTON = "⏭ Пока без оплаты"
     REGISTRATION_CONFIRM_SAVED_BUTTON = "✅ Продолжить"
     REGISTRATION_EDIT_DETAILS_BUTTON = "✏️ Изменить данные"
     REGISTRATION_KEEP_TIME_BUTTON = "🔁 То же время"
@@ -538,7 +339,7 @@ class ConfettiTelegramBot:
     ADMIN_BACK_TO_USER_BUTTON = "⬅️ Пользовательское меню"
     ADMIN_BROADCAST_BUTTON = "📣 Рассылка"
     ADMIN_EXPORT_TABLE_BUTTON = "📊 Таблица заявок"
-    ADMIN_ADD_ADMIN_BUTTON = "➕ Добавить администратора"
+    ADMIN_MANAGE_ADMINS_BUTTON = "👤 Редактировать администраторов"
     ADMIN_EDIT_SCHEDULE_BUTTON = "🗓 Редактировать расписание"
     ADMIN_EDIT_ABOUT_BUTTON = "ℹ️ Редактировать информацию"
     ADMIN_EDIT_TEACHERS_BUTTON = "👩‍🏫 Редактировать преподавателей"
@@ -547,6 +348,17 @@ class ConfettiTelegramBot:
     ADMIN_EDIT_VOCABULARY_BUTTON = "📚 Редактировать словарь"
     ADMIN_CANCEL_KEYWORDS = ("отмена", "annuler", "cancel")
     ADMIN_CANCEL_PROMPT = f"\n\nЧтобы отменить, нажмите «{BACK_BUTTON}» или напишите «Отмена»."
+
+    EXPORT_COLUMN_WIDTHS = (
+        20,
+        36,
+        30,
+        22,
+        18,
+        26,
+        36,
+        24,
+    )
 
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание"),
@@ -769,7 +581,8 @@ class ConfettiTelegramBot:
             self._runtime_admin_ids.update(dynamic_admins)
         self._storage_dirty = False
         self._bot_username: Optional[str] = None
-        self._sheets_backend: Optional[GoogleSheetsBackend] = self._create_sheets_backend()
+        self._google_sheets_exporter = _GoogleSheetsExporter.from_env()
+        self._last_google_sheet_url: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -794,73 +607,6 @@ class ConfettiTelegramBot:
                 dirty = True
         if dirty:
             self._save_persistent_state()
-
-    def _create_sheets_backend(self) -> Optional[GoogleSheetsBackend]:
-        sheet_id = os.environ.get("CONFETTI_GOOGLE_SHEET_ID")
-        if not sheet_id:
-            return None
-        if gspread is None or Credentials is None:
-            LOGGER.warning(
-                "Google Sheets не настроен: отсутствуют зависимости gspread/google-auth."
-            )
-            return None
-
-        credentials_payload = self._load_service_account_credentials()
-        if credentials_payload is None:
-            LOGGER.warning(
-                "Google Sheets не настроен: не найден файл или JSON сервисного аккаунта."
-            )
-            return None
-
-        try:
-            credentials = Credentials.from_service_account_info(
-                credentials_payload,
-                scopes=[
-                    "https://www.googleapis.com/auth/spreadsheets",
-                    "https://www.googleapis.com/auth/drive",
-                ],
-            )
-        except Exception as exc:  # pragma: no cover - depends on config
-            LOGGER.warning("Не удалось загрузить креды Google: %s", exc)
-            return None
-
-        try:
-            return GoogleSheetsBackend(sheet_id=sheet_id, credentials=credentials)
-        except SheetsBackendError as exc:  # pragma: no cover - optional deps
-            LOGGER.warning("Google Sheets недоступен: %s", exc)
-        except Exception as exc:  # pragma: no cover - optional deps
-            LOGGER.warning("Не удалось инициализировать Google Sheets: %s", exc)
-        return None
-
-    def _load_service_account_credentials(self) -> Optional[dict[str, Any]]:
-        candidates = [
-            os.environ.get("CONFETTI_GOOGLE_SERVICE_ACCOUNT_JSON"),
-            os.environ.get("CONFETTI_GOOGLE_SERVICE_ACCOUNT_FILE"),
-        ]
-        for value in candidates:
-            if not value:
-                continue
-            payload = self._parse_credentials_value(value)
-            if payload is not None:
-                return payload
-        return None
-
-    def _parse_credentials_value(self, value: str) -> Optional[dict[str, Any]]:
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            path = Path(value).expanduser()
-            if not path.exists():
-                return None
-            try:
-                parsed = json.loads(path.read_text(encoding="utf-8"))
-            except Exception:  # pragma: no cover - filesystem dependant
-                LOGGER.warning("Не удалось прочитать файл с сервисным аккаунтом: %s", path)
-                return None
-        if isinstance(parsed, dict):
-            return parsed
-        LOGGER.warning("Неверный формат сервисного аккаунта: ожидался JSON-объект.")
-        return None
 
     def _generate_registration_id(self) -> str:
         while True:
@@ -1466,6 +1212,7 @@ class ConfettiTelegramBot:
         application.add_handler(cancellation)
         application.add_handler(CallbackQueryHandler(self._about_show_direction, pattern=r"^about:"))
         application.add_handler(CallbackQueryHandler(self._teacher_show_profile, pattern=r"^teacher:"))
+        application.add_handler(CallbackQueryHandler(self._inline_go_home, pattern=r"^nav:home$"))
         application.add_handler(MessageHandler(~filters.COMMAND, self._handle_message))
 
     def _exact_match_regex(self, text: str) -> str:
@@ -1489,11 +1236,17 @@ class ConfettiTelegramBot:
     ) -> ReplyKeyboardMarkup:
         return self._main_menu_markup(include_admin=self._is_admin_update(update, context))
 
+    def _main_menu_message(self, update: Update, context: Optional[ContextTypes.DEFAULT_TYPE] = None) -> str:
+        message = "👉 Пожалуйста, выберите раздел в меню ниже."
+        if self._is_admin_update(update, context):
+            message += "\n\n🛠 Для управления ботом откройте «Админ-панель» в меню."
+        return message
+
     def _admin_menu_markup(self) -> ReplyKeyboardMarkup:
         keyboard = [
             [self.ADMIN_BACK_TO_USER_BUTTON],
             [self.ADMIN_BROADCAST_BUTTON, self.ADMIN_EXPORT_TABLE_BUTTON],
-            [self.ADMIN_ADD_ADMIN_BUTTON],
+            [self.ADMIN_MANAGE_ADMINS_BUTTON],
             [self.ADMIN_EDIT_SCHEDULE_BUTTON],
             [self.ADMIN_EDIT_ABOUT_BUTTON],
             [self.ADMIN_EDIT_TEACHERS_BUTTON],
@@ -1571,6 +1324,40 @@ class ConfettiTelegramBot:
         self._save_persistent_state()
         return existing
 
+    def _remove_dynamic_admin(
+        self, context: ContextTypes.DEFAULT_TYPE, admin_id: int
+    ) -> bool:
+        storage = self._application_data(context)
+        existing = storage.get("dynamic_admins")
+        if not isinstance(existing, set):
+            existing = self._refresh_admin_cache(context)
+        if admin_id not in existing:
+            return False
+        existing.remove(admin_id)
+        storage["dynamic_admins"] = existing
+        self._runtime_admin_ids.discard(admin_id)
+        self._save_persistent_state()
+        return True
+
+    def _admin_manage_admins_instruction(
+        self, context: ContextTypes.DEFAULT_TYPE
+    ) -> str:
+        dynamic_ids = sorted(self._refresh_admin_cache(context))
+        base_ids = sorted(self.admin_chat_ids)
+
+        def _format_ids(items: Iterable[int]) -> str:
+            formatted = [str(item) for item in items]
+            return ", ".join(formatted) if formatted else "—"
+
+        return (
+            "Управление администраторами.\n"
+            "Отправьте +ID, чтобы добавить администратора, или -ID, чтобы удалить его.\n"
+            "Можно указать несколько идентификаторов через пробел или на отдельных строках.\n"
+            "Получить chat_id можно через @TheGetAnyID_bot.\n\n"
+            f"Основные администраторы: {_format_ids(base_ids)}\n"
+            f"Добавлены через бот: {_format_ids(dynamic_ids)}"
+        )
+
     def _remember_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self._refresh_admin_cache(context)
         chat = update.effective_chat
@@ -1630,9 +1417,20 @@ class ConfettiTelegramBot:
         chat = update.effective_chat
         user = update.effective_user
         record_id = data.get("id") or self._generate_registration_id()
+        program_label = data.get("program", "")
+        teacher = data.get("teacher") or self._resolve_program_teacher(str(program_label))
+        stored_media = data.get("payment_media", [])
+        if attachments and stored_media:
+            payment_media = stored_media
+        elif attachments:
+            payment_media = self._attachments_to_dicts(attachments)
+        else:
+            payment_media = stored_media
+
         record = {
             "id": record_id,
-            "program": data.get("program", ""),
+            "program": program_label,
+            "teacher": teacher,
             "child_name": data.get("child_name", ""),
             "class": data.get("class", ""),
             "phone": data.get("phone", ""),
@@ -1643,9 +1441,7 @@ class ConfettiTelegramBot:
             "submitted_by_id": getattr(user, "id", None) if user else None,
             "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
             "payment_note": data.get("payment_note", ""),
-            "payment_media": self._attachments_to_dicts(attachments or [])
-            if attachments
-            else data.get("payment_media", []),
+            "payment_media": payment_media,
         }
         registrations = self._application_data(context).setdefault("registrations", [])
         needs_save = False
@@ -1667,63 +1463,21 @@ class ConfettiTelegramBot:
 
         return record
 
-    async def _sync_registration_sheet(
-        self,
-        context: ContextTypes.DEFAULT_TYPE,
-        record: dict[str, Any],
-        attachments: Optional[list[MediaAttachment]],
-    ) -> None:
-        backend = self._sheets_backend
-        if backend is None:
-            return
-        if record.get("sheet_row"):
-            # Remove existing row before appending fresh data.
-            try:
-                await backend.delete_registration(str(record.get("id")))
-            except Exception as exc:  # pragma: no cover - network dependent
-                LOGGER.warning("Не удалось обновить строку Google Sheets: %s", exc)
-
-        payment_media = attachments or []
-        payment_status = "Получено" if payment_media else "Ожидается"
-        if payment_media:
-            payment_status += f" ({len(payment_media)} влож.)"
-
-        image_formula: Optional[str] = None
-        for attachment in payment_media:
-            image_formula = await self._build_image_formula(context, attachment)
-            if image_formula:
-                break
-
-        if payment_media:
-            image_value: Optional[str] = image_formula or "\n".join(
-                self._describe_attachment(item) for item in payment_media
-            )
-        else:
-            image_value = "—"
-
-        try:
-            row_number = await backend.append_registration(
-                record,
-                payment_status=payment_status,
-                image_value=image_value,
-            )
-        except Exception as exc:  # pragma: no cover - network dependent
-            LOGGER.warning("Не удалось записать данные в Google Sheets: %s", exc)
-            return
-
-        record["sheet_row"] = row_number
-        record["sheet_synced_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-        self._save_persistent_state()
-
-    async def _build_image_formula(
-        self,
-        context: ContextTypes.DEFAULT_TYPE,
-        attachment: MediaAttachment,
-    ) -> Optional[str]:
-        data_url = await self._download_photo_data_url(context, attachment)
-        if not data_url:
+    def _find_registration_by_id(
+        self, context: ContextTypes.DEFAULT_TYPE, registration_id: str
+    ) -> Optional[dict[str, Any]]:
+        registrations = self._application_data(context).get("registrations")
+        if not isinstance(registrations, list):
             return None
-        return f'=IMAGE("{data_url}")'
+        target = registration_id.strip()
+        if not target:
+            return None
+        for record in registrations:
+            if not isinstance(record, dict):
+                continue
+            if str(record.get("id")) == target:
+                return record
+        return None
 
     def _parse_record_timestamp(self, value: Any) -> Optional[datetime]:
         if isinstance(value, datetime):
@@ -1756,54 +1510,9 @@ class ConfettiTelegramBot:
         if not removed:
             return
 
-        profiles_changed = False
-        for record in removed:
-            if self._remove_user_registration_snapshot(record):
-                profiles_changed = True
-
-        if profiles_changed or removed:
+        if removed:
             self._save_persistent_state()
 
-        backend = self._sheets_backend
-        if backend is None:
-            return
-
-        for record in removed:
-            registration_id = record.get("id")
-            if not registration_id:
-                continue
-            try:
-                await backend.delete_registration(str(registration_id))
-            except Exception as exc:  # pragma: no cover - network dependent
-                LOGGER.warning("Не удалось удалить просроченную запись из Google Sheets: %s", exc)
-
-    async def _download_photo_data_url(
-        self,
-        context: ContextTypes.DEFAULT_TYPE,
-        attachment: MediaAttachment,
-    ) -> Optional[str]:
-        if attachment.kind != "photo":
-            return None
-        bot = getattr(context, "bot", None)
-        if bot is None:
-            return None
-        try:
-            telegram_file = await bot.get_file(attachment.file_id)
-        except Exception as exc:  # pragma: no cover - network dependent
-            LOGGER.warning("Не удалось получить файл оплаты: %s", exc)
-            return None
-        try:
-            payload = await telegram_file.download_as_bytearray()
-        except Exception as exc:  # pragma: no cover - network dependent
-            LOGGER.warning("Не удалось скачать файл оплаты: %s", exc)
-            return None
-        data = bytes(payload)
-        mime_type = getattr(telegram_file, "mime_type", None)
-        if not mime_type:
-            file_path = getattr(telegram_file, "file_path", "")
-            mime_type = mimetypes.guess_type(file_path)[0] or "image/jpeg"
-        encoded = base64.b64encode(data).decode("ascii")
-        return f"data:{mime_type};base64,{encoded}"
 
     async def _remove_registration_for_cancellation(
         self,
@@ -1853,14 +1562,6 @@ class ConfettiTelegramBot:
         removed = registrations.pop(match_index)
         self._remove_user_registration_snapshot(removed)
 
-        backend = self._sheets_backend
-        registration_id = removed.get("id")
-        if backend is not None and registration_id:
-            try:
-                await backend.delete_registration(str(registration_id))
-            except Exception as exc:  # pragma: no cover - network dependent
-                LOGGER.warning("Не удалось удалить запись из Google Sheets: %s", exc)
-
         return removed
 
     def _describe_attachment(self, attachment: MediaAttachment) -> str:
@@ -1874,7 +1575,9 @@ class ConfettiTelegramBot:
             "voice": "Голос",
         }
         title = labels.get(attachment.kind, attachment.kind or "Вложение")
-        return f"{title}: {attachment.file_id}"
+        if attachment.caption:
+            return f"{title}: {attachment.caption}"
+        return f"{title} во вложении"
 
     async def _store_cancellation(
         self,
@@ -1952,14 +1655,28 @@ class ConfettiTelegramBot:
                         reply_markup=self._main_menu_markup_for(update, context),
                     )
                     return
-                sent = await self._send_registrations_excel(update, context)
-                if sent:
+                await self._admin_share_registrations_table(update, context)
+                return
+            if payload.startswith("payment_"):
+                if not self._is_admin_update(update, context):
                     await self._reply(
                         update,
-                        "Экспорт завершён. Таблица отправлена сообщением выше.",
-                        reply_markup=self._admin_menu_markup(),
+                        "Просмотр вложений доступен только администраторам.",
+                        reply_markup=self._main_menu_markup_for(update, context),
                     )
-                return
+                    return
+                remainder = payload.split("payment_", 1)[1]
+                registration_id, attachment_index = self._parse_payment_deeplink_payload(
+                    remainder
+                )
+                handled = await self._send_registration_payment_media(
+                    update,
+                    context,
+                    registration_id,
+                    attachment_index=attachment_index,
+                )
+                if handled:
+                    return
 
         await self._send_greeting(update, context)
 
@@ -1967,12 +1684,23 @@ class ConfettiTelegramBot:
         """Show the menu without repeating the full greeting."""
 
         self._remember_chat(update, context)
-        message = (
-            "👉 Пожалуйста, выберите раздел в меню ниже."
+        await self._reply(
+            update,
+            self._main_menu_message(update, context),
+            reply_markup=self._main_menu_markup_for(update, context),
         )
-        if self._is_admin_update(update, context):
-            message += "\n\n🛠 Для управления ботом откройте «Админ-панель» в меню."
-        await self._reply(update, message, reply_markup=self._main_menu_markup_for(update, context))
+
+    async def _inline_go_home(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+        self._remember_chat(update, context)
+        await self._reply(
+            update,
+            self._main_menu_message(update, context),
+            reply_markup=self._main_menu_markup_for(update, context),
+            prefer_edit=True,
+        )
 
     async def _show_admin_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_admin_update(update, context):
@@ -2140,12 +1868,7 @@ class ConfettiTelegramBot:
                 normalized_media.append(clone)
             media = normalized_media
 
-        if (
-            prefer_edit
-            and callback
-            and callback.message is not None
-            and (inline_markup is not None or reply_markup is None)
-        ):
+        if prefer_edit and callback and callback.message is not None:
             try:
                 if text is not None:
                     target_message = callback.message
@@ -2154,15 +1877,22 @@ class ConfettiTelegramBot:
                         getattr(target_message, attribute, None)
                         for attribute in ("photo", "video", "animation", "document")
                     ):
+                        edit_kwargs: dict[str, Any] = {}
+                        if inline_markup is not None:
+                            edit_kwargs["reply_markup"] = inline_markup
                         try:
-                            await target_message.edit_caption(text, reply_markup=inline_markup)
+                            await target_message.edit_caption(text, **edit_kwargs)
                         except Exception as exc:  # pragma: no cover - Telegram runtime dependent
                             LOGGER.debug("Failed to edit caption: %s", exc)
                         else:
                             edited = True
                     if not edited:
-                        await target_message.edit_text(text, reply_markup=inline_markup)
-                    markup_used = inline_markup is not None
+                        edit_kwargs = {}
+                        if inline_markup is not None:
+                            edit_kwargs["reply_markup"] = inline_markup
+                        await target_message.edit_text(text, **edit_kwargs)
+                    if inline_markup is not None or reply_markup is not None:
+                        markup_used = True
                     text = None
                     target = target_message
                 elif media:
@@ -2177,7 +1907,7 @@ class ConfettiTelegramBot:
                             except Exception as exc:  # pragma: no cover - Telegram runtime dependent
                                 LOGGER.debug("Failed to edit media: %s", exc)
                             else:
-                                markup_used = inline_markup is not None
+                                markup_used = inline_markup is not None or reply_markup is not None
                                 media = []
                                 target = callback.message
                     if media:
@@ -2350,6 +2080,8 @@ class ConfettiTelegramBot:
                     "kind": attachment.kind,
                     "file_id": attachment.file_id,
                     "caption": attachment.caption or "",
+                    "preview_base64": attachment.preview_base64 or "",
+                    "preview_mime": attachment.preview_mime or "",
                 }
             )
         return serialised
@@ -2366,8 +2098,36 @@ class ConfettiTelegramBot:
             if not kind or not file_id:
                 continue
             caption = entry.get("caption") or None
-            attachments.append(MediaAttachment(kind=kind, file_id=file_id, caption=caption))
+            preview_base64 = entry.get("preview_base64") or None
+            preview_mime = entry.get("preview_mime") or None
+            attachments.append(
+                MediaAttachment(
+                    kind=kind,
+                    file_id=file_id,
+                    caption=caption,
+                    preview_base64=preview_base64,
+                    preview_mime=preview_mime,
+                )
+            )
         return attachments
+
+    async def _serialise_payment_media(
+        self, context: ContextTypes.DEFAULT_TYPE, attachments: list[MediaAttachment]
+    ) -> list[dict[str, str]]:
+        """Convert payment attachments to a JSON-friendly structure."""
+
+        serialised: list[dict[str, str]] = []
+        for attachment in attachments:
+            serialised.append(
+                {
+                    "kind": attachment.kind,
+                    "file_id": attachment.file_id,
+                    "caption": attachment.caption or "",
+                    "preview_base64": attachment.preview_base64 or "",
+                    "preview_mime": attachment.preview_mime or "",
+                }
+            )
+        return serialised
 
     # ------------------------------------------------------------------
     # Registration conversation
@@ -2403,7 +2163,7 @@ class ConfettiTelegramBot:
             [InlineKeyboardButton(program["label"], callback_data=f"about:{index}")]
             for index, program in enumerate(self.PROGRAMS)
         ]
-        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="about:home")])
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="nav:home")])
         return InlineKeyboardMarkup(buttons)
 
     def _teacher_inline_keyboard(self) -> "InlineKeyboardMarkup":
@@ -2411,7 +2171,7 @@ class ConfettiTelegramBot:
             [InlineKeyboardButton(teacher["name"], callback_data=f"teacher:{teacher['key']}")]
             for teacher in self.TEACHERS
         ]
-        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="teacher:home")])
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="nav:home")])
         return InlineKeyboardMarkup(buttons)
 
     def _format_program_details(self, program: Dict[str, str]) -> str:
@@ -2425,6 +2185,12 @@ class ConfettiTelegramBot:
             if value:
                 lines.append(value)
         return "\n".join(line for line in lines if line is not None)
+
+    def _resolve_program_teacher(self, program_label: str) -> str:
+        for program in self.PROGRAMS:
+            if program.get("label") == program_label:
+                return program.get("teacher", "") or ""
+        return ""
 
     async def _registration_prompt_program_buttons(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -2442,6 +2208,7 @@ class ConfettiTelegramBot:
         message = update.message
 
         program_label = ""
+        selected_program: Optional[dict[str, str]] = None
         if query is not None:
             data = query.data or ""
             try:
@@ -2467,15 +2234,22 @@ class ConfettiTelegramBot:
                     await self._reply(update, f"Вы выбрали программу:\n{details}")
             else:
                 await self._reply(update, f"Вы выбрали программу:\n{details}")
+            selected_program = program
         else:
             program_label = (message.text if message else "").strip()
             program = next((item for item in self.PROGRAMS if item["label"] == program_label), None)
             if not program:
                 await self._registration_prompt_program_buttons(update, context)
                 return self.REGISTRATION_PROGRAM
+            selected_program = program
 
         registration = context.user_data.setdefault("registration", {})
         registration["program"] = program_label
+        teacher = (selected_program or {}).get("teacher") or self._resolve_program_teacher(program_label)
+        if teacher:
+            registration["teacher"] = teacher
+        else:
+            registration.pop("teacher", None)
 
         defaults = self._get_user_defaults(update.effective_user)
         if defaults:
@@ -2592,7 +2366,7 @@ class ConfettiTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
-        for key in ("program", "time", "saved_time", "saved_time_original", "proposed_time"):
+        for key in ("program", "teacher", "time", "saved_time", "saved_time_original", "proposed_time"):
             registration.pop(key, None)
         await self._reply(
             update,
@@ -2679,10 +2453,7 @@ class ConfettiTelegramBot:
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     def _payment_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [
-            [KeyboardButton(self.REGISTRATION_SKIP_PAYMENT_BUTTON)],
-            [KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)],
-        ]
+        keyboard = [[KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)]]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     def _saved_time_keyboard(self) -> ReplyKeyboardMarkup:
@@ -2801,8 +2572,8 @@ class ConfettiTelegramBot:
     async def _prompt_payment_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         instructions = self._get_content(context).payment
         message = (
-            "💳 Отправьте подтверждение оплаты (фото, видео или файл).\n\n"
-            "➡️ Если оплаты ещё нет, нажмите «⏭ Пока без оплаты» и мы свяжемся с вами позже."
+            "💳 Отправьте подтверждение оплаты — нам нужно фото или скан квитанции.\n\n"
+            "⚠️ Без подтверждения оплаты заявка не будет отправлена администраторам."
         )
         if instructions.text:
             message += "\n\n" + instructions.text
@@ -2826,17 +2597,26 @@ class ConfettiTelegramBot:
         if text == self.BACK_BUTTON:
             return await self._registration_back_to_time(update, context)
 
-        if text == self.REGISTRATION_SKIP_PAYMENT_BUTTON:
-            data["payment_note"] = "Платёж будет подтверждён позже"
-            data.pop("payment_media", None)
-            await self._send_registration_summary(update, context, media=None)
-            await self._show_main_menu(update, context)
-            return ConversationHandler.END
-
-        if attachments:
-            data["payment_media"] = self._attachments_to_dicts(attachments)
         if text:
             data["payment_note"] = text
+
+        if not attachments:
+            await self._reply(
+                update,
+                "📎 Пожалуйста, прикрепите фото чека или квитанции, чтобы завершить запись.",
+                reply_markup=self._payment_keyboard(),
+            )
+            return self.REGISTRATION_PAYMENT
+
+        if not any(item.kind == "photo" for item in attachments):
+            await self._reply(
+                update,
+                "🖼 Отправьте хотя бы одну фотографию подтверждения оплаты.",
+                reply_markup=self._payment_keyboard(),
+            )
+            return self.REGISTRATION_PAYMENT
+
+        data["payment_media"] = await self._serialise_payment_media(context, attachments)
 
         await self._send_registration_summary(update, context, media=attachments or None)
         await self._show_main_menu(update, context)
@@ -3012,6 +2792,8 @@ class ConfettiTelegramBot:
         payment_note = data.get("payment_note")
         payment_status = "✅ Оплата подтверждена" if attachments else "⏳ Оплата ожидается"
 
+        teacher_line = data.get("teacher") or self._resolve_program_teacher(str(data.get("program", "")))
+
         summary = (
             "Ваша заявка принята!\n\n"
             f"👦 Участник: {data.get('child_name', '—')} ({data.get('class', '—')})\n"
@@ -3020,13 +2802,14 @@ class ConfettiTelegramBot:
             f"📚 Программа: {data.get('program', '—')}\n"
             f"💳 {payment_status}\n"
         )
+        if teacher_line:
+            summary += f"{teacher_line}\n"
         if payment_note:
             summary += f"📝 Комментарий: {payment_note}\n"
         summary += "\nМы свяжемся с вами в ближайшее время."
 
         await self._reply(update, summary, reply_markup=self._main_menu_markup_for(update, context))
         record = self._store_registration(update, context, data, attachments)
-        await self._sync_registration_sheet(context, record, attachments or None)
 
         admin_message = (
             "🆕 Новая заявка\n"
@@ -3036,6 +2819,8 @@ class ConfettiTelegramBot:
             f"🕒 Время: {data.get('time', '—')}\n"
             f"💳 Статус оплаты: {'получено' if attachments else 'ожидается'}"
         )
+        if teacher_line:
+            admin_message += f"\n{teacher_line}"
         if payment_note:
             admin_message += f"\n📝 Комментарий: {payment_note}"
 
@@ -3115,12 +2900,12 @@ class ConfettiTelegramBot:
             if command_text == self.ADMIN_EXPORT_TABLE_BUTTON:
                 await self._admin_share_registrations_table(update, context)
                 return
-            if command_text == self.ADMIN_ADD_ADMIN_BUTTON:
-                context.chat_data["pending_admin_action"] = {"type": "add_admin"}
+            if command_text == self.ADMIN_MANAGE_ADMINS_BUTTON:
+                context.chat_data["pending_admin_action"] = {"type": "manage_admins"}
+                message = self._admin_manage_admins_instruction(context)
                 await self._reply(
                     update,
-                    "Введите chat_id нового администратора.\n"
-                    + self.ADMIN_CANCEL_PROMPT,
+                    message + self.ADMIN_CANCEL_PROMPT,
                     reply_markup=self._admin_action_keyboard(),
                 )
                 return
@@ -3214,8 +2999,8 @@ class ConfettiTelegramBot:
                     reply_markup=self._admin_menu_markup(),
                 )
             return
-        if action_type == "add_admin":
-            await self._admin_add_new_admin(update, context, text)
+        if action_type == "manage_admins":
+            await self._admin_manage_admins(update, context, text)
             return
         if action_type == "edit_vocabulary":
             success = await self._admin_apply_vocabulary_update(update, context, text)
@@ -3228,37 +3013,122 @@ class ConfettiTelegramBot:
             reply_markup=self._admin_menu_markup(),
         )
 
-    async def _admin_add_new_admin(
+    async def _admin_manage_admins(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str
     ) -> None:
-        try:
-            admin_id = _coerce_chat_id(payload)
-        except ValueError:
+        self._refresh_admin_cache(context)
+        tokens = [part.strip() for part in re.split(r"[\s,]+", payload or "") if part.strip()]
+        operations: list[tuple[str, int]] = []
+        invalid_tokens: list[str] = []
+
+        for token in tokens:
+            action = "add"
+            value = token
+            if token.startswith("+"):
+                value = token[1:]
+            elif token.startswith("-"):
+                action = "remove"
+                value = token[1:]
+            if not value:
+                invalid_tokens.append(token)
+                continue
+            try:
+                admin_id = _coerce_chat_id(value)
+            except ValueError:
+                invalid_tokens.append(token)
+                continue
+            operations.append((action, admin_id))
+
+        if not operations and not invalid_tokens:
+            context.chat_data["pending_admin_action"] = {"type": "manage_admins"}
+            message = (
+                "Не удалось распознать chat_id. Пожалуйста, укажите номер без пробелов"
+                " или используйте знаки + и - перед идентификатором."
+            )
+            message += "\n\n" + self._admin_manage_admins_instruction(context)
             await self._reply(
                 update,
-                "Пожалуйста, отправьте числовой chat_id администратора."
-                + self.ADMIN_CANCEL_PROMPT,
+                message + self.ADMIN_CANCEL_PROMPT,
                 reply_markup=self._admin_action_keyboard(),
             )
-            context.chat_data["pending_admin_action"] = {"type": "add_admin"}
             return
 
-        if admin_id in self._runtime_admin_ids:
-            await self._reply(
-                update,
-                "Этот chat_id уже обладает правами администратора.",
-                reply_markup=self._admin_menu_markup(),
+        added: list[int] = []
+        removed: list[int] = []
+        skipped_existing: list[int] = []
+        protected: list[int] = []
+        missing: list[int] = []
+
+        for action, admin_id in operations:
+            if action == "add":
+                if admin_id in self._runtime_admin_ids:
+                    skipped_existing.append(admin_id)
+                    continue
+                self._store_dynamic_admin(context, admin_id)
+                added.append(admin_id)
+            else:
+                if admin_id in self.admin_chat_ids:
+                    protected.append(admin_id)
+                    continue
+                if self._remove_dynamic_admin(context, admin_id):
+                    removed.append(admin_id)
+                else:
+                    missing.append(admin_id)
+
+        summary_lines = ["Обновление списка администраторов завершено."]
+        if added:
+            summary_lines.append(
+                "✅ Добавлены: " + ", ".join(str(item) for item in sorted(added))
             )
-            return
+        if removed:
+            summary_lines.append(
+                "🗑 Удалены: " + ", ".join(str(item) for item in sorted(removed))
+            )
+        if skipped_existing:
+            summary_lines.append(
+                "ℹ️ Уже были администраторами: "
+                + ", ".join(str(item) for item in sorted(skipped_existing))
+            )
+        if protected:
+            summary_lines.append(
+                "🔒 Нельзя удалить (зафиксированы в настройках бота): "
+                + ", ".join(str(item) for item in sorted(protected))
+            )
+        if missing:
+            summary_lines.append(
+                "⚠️ Не найдены среди динамических администраторов: "
+                + ", ".join(str(item) for item in sorted(missing))
+            )
+        if invalid_tokens:
+            summary_lines.append(
+                "❗️ Не удалось распознать: " + ", ".join(invalid_tokens)
+            )
 
-        self._store_dynamic_admin(context, admin_id)
-        message = f"✅ Администратор {admin_id} добавлен."
-        await self._reply(update, message, reply_markup=self._admin_menu_markup())
+        summary_lines.append("")
+        summary_lines.append(self._admin_manage_admins_instruction(context))
 
-        await self._notify_admins(
-            context,
-            f"👑 Обновление прав: {admin_id} теперь администратор.",
+        context.chat_data["pending_admin_action"] = {"type": "manage_admins"}
+        await self._reply(
+            update,
+            "\n".join(summary_lines) + self.ADMIN_CANCEL_PROMPT,
+            reply_markup=self._admin_action_keyboard(),
         )
+
+        if added or removed:
+            updates = []
+            if added:
+                updates.append(
+                    "Добавлены: " + ", ".join(str(item) for item in sorted(added))
+                )
+            if removed:
+                updates.append(
+                    "Удалены: " + ", ".join(str(item) for item in sorted(removed))
+                )
+            if updates:
+                await self._notify_admins(
+                    context,
+                    "👑 Обновление прав администраторов:\n" + "\n".join(updates),
+                )
 
     async def _prompt_admin_content_edit(
         self,
@@ -3374,42 +3244,18 @@ class ConfettiTelegramBot:
             )
             return
 
-        backend = self._sheets_backend
-        if backend is not None:
-            try:
-                sheet_link = await backend.link()
-            except Exception as exc:  # pragma: no cover - network dependent
-                LOGGER.warning("Не удалось получить ссылку на Google Sheets: %s", exc)
-            else:
-                preview_lines = self._format_registrations_preview(registrations)
-                message_parts = [
-                    "📊 Живая таблица заявок доступна в Google Sheets!",
-                    f"🗂 Всего записей: {len(registrations)}",
-                    "",
-                    f"🔗 Откройте таблицу: {sheet_link}",
-                    "Все изменения, внесённые в таблицу, видны администраторам и сохраняются в облаке.",
-                ]
-                if preview_lines:
-                    message_parts.append("")
-                    message_parts.extend(preview_lines)
-                service_email = getattr(backend, "service_account_email", None)
-                if service_email:
-                    message_parts.append("")
-                    message_parts.append(
-                        "ℹ️ Убедитесь, что сервисному аккаунту предоставлен доступ на редактирование:"
-                    )
-                    message_parts.append(service_email)
+        bot_username = await self._ensure_bot_username(context)
 
-                await self._reply(
-                    update,
-                    "\n".join(message_parts),
-                    reply_markup=self._admin_menu_markup(),
-                )
-                return
-
-        export_path, generated_at = self._export_registrations_excel(context, registrations)
+        table_rows = self._build_registration_table_rows(
+            registrations,
+            bot_username=bot_username,
+        )
+        export_path, generated_at = self._export_registrations_excel(
+            context,
+            table_rows,
+        )
+        sheet_result = await self._sync_google_sheet(table_rows)
         preview_lines = self._format_registrations_preview(registrations)
-        deeplink = await self._build_registrations_deeplink(context)
 
         message_parts = [
             "📊 Экспорт заявок готов!\n",
@@ -3419,78 +3265,99 @@ class ConfettiTelegramBot:
         if preview_lines:
             message_parts.append("")
             message_parts.extend(preview_lines)
-        if deeplink:
+        if sheet_result.url:
             message_parts.append("")
-            message_parts.append(f"🔗 Таблица: {deeplink}")
-            message_parts.append(
-                "Нажмите ссылку, чтобы в любой момент получить свежую версию."
-            )
+            message_parts.append(f"🌐 Живая таблица: {sheet_result.url}")
+            if sheet_result.updated:
+                message_parts.append(
+                    "Таблица обновлена автоматически и содержит актуальные данные."
+                )
+            else:
+                message_parts.append(
+                    "⚠️ Не удалось обновить таблицу автоматически. Проверьте доступ Google Sheets; ссылка ведёт на последнюю доступную версию."
+                )
         else:
             message_parts.append("")
             message_parts.append(
-                "🔽 Файл с таблицей отправлен ниже. Сохраните его в облаке Telegram для быстрого доступа."
+                "⚠️ Облачная таблица недоступна: проверьте настройки сервисного аккаунта."
             )
+        message_parts.append("")
+        message_parts.append(
+            "🔗 В столбце «Фото оплаты» размещены кликабельные ссылки на подтверждения платежей."
+        )
 
         await self._reply(
             update,
             "\n".join(message_parts),
             reply_markup=self._admin_menu_markup(),
         )
-        await self._send_registrations_excel(
-            update,
-            context,
-            path=export_path,
-            generated_at=generated_at,
+
+    def _build_registration_table_rows(
+        self,
+        registrations: list[dict[str, Any]],
+        *,
+        bot_username: Optional[str],
+    ) -> list[list[_XlsxCell]]:
+        header = (
+            "Дата заявки",
+            "Программа",
+            "Участник",
+            "Класс / возраст",
+            "Телефон",
+            "Предпочтительное время",
+            "Фото оплаты",
+            "Отправитель",
         )
+
+        def make_cell(value: Any) -> _XlsxCell:
+            if isinstance(value, _XlsxCell):
+                return value
+            if value is None:
+                return _XlsxCell("")
+            return _XlsxCell(str(value))
+
+        rows: list[list[_XlsxCell]] = [
+            [make_cell(title) for title in header]
+        ]
+
+        for record in registrations:
+            payment_entries = self._dicts_to_attachments(record.get("payment_media"))
+            payment_note = record.get("payment_note") or ""
+            registration_id = str(record.get("id") or "")
+            photo_cell = self._build_payment_link_cell(
+                bot_username=bot_username,
+                registration_id=registration_id,
+                attachments=payment_entries,
+                payment_note=payment_note,
+            )
+
+            rows.append(
+                [
+                    make_cell(record.get("created_at") or ""),
+                    make_cell(record.get("program") or ""),
+                    make_cell(record.get("child_name") or ""),
+                    make_cell(record.get("class") or ""),
+                    make_cell(record.get("phone") or ""),
+                    make_cell(record.get("time") or ""),
+                    make_cell(photo_cell),
+                    make_cell(record.get("submitted_by") or ""),
+                ]
+            )
+
+        return rows
 
     def _export_registrations_excel(
         self,
         context: ContextTypes.DEFAULT_TYPE,
-        registrations: list[dict[str, Any]],
+        table_rows: Sequence[Sequence[_XlsxCell]],
     ) -> tuple[Path, str]:
-        builder = _SimpleXlsxBuilder(sheet_name="Заявки")
-        builder.add_row(
-            (
-                "Дата заявки",
-                "Программа",
-                "Участник",
-                "Класс / возраст",
-                "Телефон",
-                "Предпочтительное время",
-                "Оплата",
-                "Вложения оплаты",
-                "Комментарий",
-                "Отправитель",
-                "Чат",
-            )
+        builder = _SimpleXlsxBuilder(
+            sheet_name="Заявки",
+            column_widths=self.EXPORT_COLUMN_WIDTHS,
         )
 
-        for record in registrations:
-            payment_media = record.get("payment_media") or []
-            payment_status = "Получено" if payment_media else "Ожидается"
-            if payment_media:
-                payment_status += f" ({len(payment_media)} влож.)"
-            payment_files = []
-            for item in payment_media:
-                kind = item.get("kind", "") if isinstance(item, dict) else ""
-                file_id = item.get("file_id", "") if isinstance(item, dict) else ""
-                if kind and file_id:
-                    payment_files.append(f"{kind}: {file_id}")
-            builder.add_row(
-                (
-                    record.get("created_at") or "",
-                    record.get("program") or "",
-                    record.get("child_name") or "",
-                    record.get("class") or "",
-                    record.get("phone") or "",
-                    record.get("time") or "",
-                    payment_status,
-                    "\n".join(payment_files) if payment_files else "",
-                    record.get("payment_note") or "",
-                    record.get("submitted_by") or "",
-                    record.get("chat_title") or "",
-                )
-            )
+        for row in table_rows:
+            builder.add_row(row)
 
         generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
         export_path = Path("data") / "exports" / "confetti_registrations.xlsx"
@@ -3498,22 +3365,163 @@ class ConfettiTelegramBot:
 
         storage = self._application_data(context)
         exports_meta = storage.setdefault("exports", {})
+        registrations_meta = {
+            "generated_at": generated_at,
+            "path": str(export_path),
+        }
         if isinstance(exports_meta, dict):
-            exports_meta["registrations"] = {
-                "generated_at": generated_at,
-                "path": str(export_path),
-            }
+            exports_meta["registrations"] = registrations_meta
         else:
-            storage["exports"] = {
-                "registrations": {
-                    "generated_at": generated_at,
-                    "path": str(export_path),
-                }
-            }
+            storage["exports"] = {"registrations": registrations_meta}
 
         self._save_persistent_state()
 
         return export_path, generated_at
+
+    def _ensure_google_sheets_exporter(self) -> Optional["_GoogleSheetsExporter"]:
+        if self._google_sheets_exporter is not None:
+            return self._google_sheets_exporter
+        exporter = _GoogleSheetsExporter.from_env()
+        self._google_sheets_exporter = exporter
+        return exporter
+
+    async def _sync_google_sheet(
+        self,
+        table_rows: Sequence[Sequence[_XlsxCell]],
+    ) -> _GoogleSheetSyncResult:
+        exporter = self._ensure_google_sheets_exporter()
+        if exporter is None:
+            return _GoogleSheetSyncResult(url=None, updated=False)
+
+        loop = asyncio.get_running_loop()
+        try:
+            url = await loop.run_in_executor(
+                None,
+                exporter.sync,
+                table_rows,
+                tuple(self.EXPORT_COLUMN_WIDTHS),
+            )
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Не удалось обновить Google Sheets: %s", exc)
+            fallback_url = self._last_google_sheet_url or exporter.url
+            if fallback_url:
+                self._last_google_sheet_url = fallback_url
+            return _GoogleSheetSyncResult(url=fallback_url, updated=False, error=str(exc))
+
+        if url:
+            self._last_google_sheet_url = url
+            return _GoogleSheetSyncResult(url=url, updated=True)
+
+        if self._last_google_sheet_url:
+            return _GoogleSheetSyncResult(url=self._last_google_sheet_url, updated=True)
+
+        fallback_url = exporter.url
+        if fallback_url:
+            self._last_google_sheet_url = fallback_url
+        return _GoogleSheetSyncResult(url=fallback_url, updated=True)
+
+    def _build_payment_link_cell(
+        self,
+        *,
+        bot_username: Optional[str],
+        registration_id: str,
+        attachments: list[MediaAttachment],
+        payment_note: str,
+    ) -> _XlsxCell:
+        has_attachments = bool(attachments)
+
+        if bot_username and registration_id and has_attachments:
+            url = self._build_payment_deeplink(bot_username, registration_id, None)
+            total = len(attachments)
+            label_lines: list[str] = []
+
+            if total == 1:
+                label_lines.append(self._format_payment_link_label(attachments[0], 0, total))
+            else:
+                label_lines.append(f"Подтверждение оплаты — файлов: {total}")
+                for index, attachment in enumerate(attachments, start=1):
+                    label_lines.append(f"{index}. {self._format_payment_link_label(attachment, index - 1, total)}")
+
+            if payment_note:
+                label_lines.append(payment_note)
+
+            label_text = "\n".join(label_lines)
+            return _XlsxCell(text=label_text, formula=self._hyperlink_formula(url, label_text))
+
+        text_lines: list[str] = []
+        if has_attachments:
+            text_lines.append("Фото оплаты доступно во вложениях бота")
+        else:
+            text_lines.append("Оплата ожидается")
+
+        if payment_note:
+            if text_lines:
+                text_lines.append("")
+            text_lines.append(payment_note)
+
+        cell_text = "\n".join(text_lines).strip()
+
+        return _XlsxCell(cell_text)
+
+    @staticmethod
+    def _hyperlink_formula(url: str, label: str) -> str:
+        safe_url = url.replace('"', '""')
+        if "\n" in label:
+            segments = [segment.replace('"', '""') for segment in label.split("\n")]
+            label_expr = '&CHAR(10)&'.join(f'"{segment}"' for segment in segments)
+            return f'HYPERLINK("{safe_url}",{label_expr})'
+        safe_label = label.replace('"', '""')
+        return f'HYPERLINK("{safe_url}","{safe_label}")'
+
+    @staticmethod
+    def _build_payment_deeplink(
+        bot_username: str,
+        registration_id: str,
+        attachment_index: Optional[int],
+    ) -> str:
+        base = f"https://t.me/{bot_username}?start=payment_{registration_id}"
+        if attachment_index is None:
+            return base
+        return f"{base}_{attachment_index + 1}"
+
+    @staticmethod
+    def _format_payment_link_label(
+        attachment: MediaAttachment,
+        index: int,
+        total: int,
+    ) -> str:
+        labels = {
+            "photo": "Фото",
+            "video": "Видео",
+            "animation": "GIF",
+            "document": "Файл",
+            "video_note": "Видео-заметка",
+            "audio": "Аудио",
+            "voice": "Голос",
+        }
+        base = labels.get(attachment.kind, attachment.kind or "Вложение")
+        if total > 1:
+            base = f"{base} {index + 1}"
+        if attachment.caption:
+            base = f"{base} ({attachment.caption})"
+        return base
+
+    @staticmethod
+    def _parse_payment_deeplink_payload(
+        payload: str,
+    ) -> tuple[str, Optional[int]]:
+        candidate = payload.strip()
+        if not candidate:
+            return "", None
+
+        if "_" in candidate:
+            base, suffix = candidate.rsplit("_", 1)
+            if suffix.isdigit():
+                index = int(suffix) - 1
+                if index >= 0:
+                    return base, index
+
+        return candidate, None
 
     def _format_registrations_preview(
         self, registrations: list[dict[str, Any]]
@@ -3533,11 +3541,11 @@ class ConfettiTelegramBot:
             preview.append(f"…и ещё {remaining} записей в таблице")
         return preview
 
-    async def _build_registrations_deeplink(
+    async def _ensure_bot_username(
         self, context: ContextTypes.DEFAULT_TYPE
     ) -> Optional[str]:
         if self._bot_username:
-            return f"https://t.me/{self._bot_username}?start=registrations_excel"
+            return self._bot_username
 
         try:
             me = await context.bot.get_me()
@@ -3550,53 +3558,78 @@ class ConfettiTelegramBot:
             return None
 
         self._bot_username = username
-        return f"https://t.me/{username}?start=registrations_excel"
+        return username
 
-    async def _send_registrations_excel(
+    async def _send_registration_payment_media(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
+        registration_id: str,
         *,
-        path: Optional[Path] = None,
-        generated_at: Optional[str] = None,
+        attachment_index: Optional[int] = None,
     ) -> bool:
-        chat = update.effective_chat
-        if chat is None:
+        record = self._find_registration_by_id(context, registration_id)
+        if record is None:
+            await self._reply(
+                update,
+                "Не удалось найти заявку с таким идентификатором.",
+                reply_markup=self._admin_menu_markup(),
+            )
             return False
 
-        await self._purge_expired_registrations(context)
-        registrations = self._application_data(context).get("registrations", [])
-        if path is None or generated_at is None:
-            if not isinstance(registrations, list) or not registrations:
+        attachments = self._dicts_to_attachments(record.get("payment_media"))
+        if not attachments:
+            await self._reply(
+                update,
+                "Для этой заявки не прикреплены файлы оплаты.",
+                reply_markup=self._admin_menu_markup(),
+            )
+            return False
+
+        selected_attachments = attachments
+        if attachment_index is not None:
+            if 0 <= attachment_index < len(attachments):
+                selected_attachments = [attachments[attachment_index]]
+            else:
                 await self._reply(
                     update,
-                    "Заявок пока нет.",
+                    "Не удалось найти вложение с указанным номером.",
                     reply_markup=self._admin_menu_markup(),
                 )
                 return False
-            path, generated_at = self._export_registrations_excel(context, registrations)
 
+        summary_lines = [
+            "💳 Вложения по заявке",
+            f"👦 Участник: {record.get('child_name', '—')} ({record.get('class', '—')})",
+            f"📚 Программа: {record.get('program', '—')}",
+            f"🗓 Создана: {record.get('created_at', '—')}",
+            f"📎 Файлов: {len(attachments)}",
+        ]
+
+        if attachment_index is not None and len(attachments) > 1:
+            summary_lines.append(
+                f"🔍 Показан файл {attachment_index + 1} из {len(attachments)}"
+            )
+
+        chat = update.effective_chat
         try:
-            chat_id = _coerce_chat_id_from_object(chat)
+            chat_id = _coerce_chat_id_from_object(chat) if chat else None
         except ValueError:
+            chat_id = None
+
+        if chat_id is None:
             return False
 
-        caption = (
-            "📊 Таблица заявок студии «Конфетти»\n"
-            f"Обновлено: {generated_at}\n"
-            "Документ включает все заявки и обновляется при каждом экспорте."
-        )
-
         try:
-            with path.open("rb") as handle:
-                await context.bot.send_document(
-                    chat_id=chat_id,
-                    document=handle,
-                    filename=path.name,
-                    caption=caption,
-                )
+            await self._send_payload_to_chat(
+                context,
+                chat_id,
+                text="\n".join(summary_lines),
+                media=selected_attachments,
+                reply_markup=self._admin_menu_markup(),
+            )
         except Exception as exc:  # pragma: no cover - network dependent
-            LOGGER.warning("Не удалось отправить таблицу заявок: %s", exc)
+            LOGGER.warning("Не удалось отправить вложения заявки %s: %s", registration_id, exc)
             return False
 
         return True
@@ -3888,7 +3921,7 @@ class ConfettiTelegramBot:
         key = data[1]
         if key == "home":
             await query.answer()
-            await self._send_teachers(update, context)
+            await self._inline_go_home(update, context)
             return
 
         teacher = next((item for item in self.TEACHERS if item["key"] == key), None)
@@ -3943,7 +3976,7 @@ class ConfettiTelegramBot:
         key = data[1]
         if key == "home":
             await query.answer()
-            await self._send_about(update, context)
+            await self._inline_go_home(update, context)
             return
 
         try:
@@ -4039,51 +4072,117 @@ class AdminProfile(UserProfile):
         return True
 
 
+@dataclass
+class _XlsxImage:
+    data: bytes
+    content_type: str
+    description: str = ""
+
+    @property
+    def extension(self) -> str:
+        mapping = {
+            "image/jpeg": "jpeg",
+            "image/jpg": "jpeg",
+            "image/png": "png",
+        }
+        return mapping.get(self.content_type.lower(), "bin")
+
+
+@dataclass
+class _XlsxCell:
+    text: str = ""
+    formula: Optional[str] = None
+    image: Optional[_XlsxImage] = None
+
+    @classmethod
+    def hyperlink(cls, text: str, url: str) -> "_XlsxCell":
+        safe_url = url.replace('"', '""')
+        safe_text = text.replace('"', '""')
+        formula = f'HYPERLINK("{safe_url}","{safe_text}")'
+        return cls(text=text, formula=formula)
+
+
 class _SimpleXlsxBuilder:
     """Minimal XLSX writer for structured admin exports."""
 
-    def __init__(self, sheet_name: str = "Sheet1") -> None:
+    def __init__(
+        self,
+        sheet_name: str = "Sheet1",
+        *,
+        column_widths: Optional[Iterable[float]] = None,
+    ) -> None:
         self.sheet_name = self._sanitise_sheet_name(sheet_name)
-        self.rows: list[list[str]] = []
+        self.rows: list[list[_XlsxCell]] = []
+        self.column_widths: list[float] = [float(width) for width in column_widths] if column_widths else []
+        self._image_anchors: list[tuple[int, int, _XlsxImage]] = []
 
     def add_row(self, values: Iterable[Any]) -> None:
-        row: list[str] = []
+        row: list[_XlsxCell] = []
         for value in values:
-            if value is None:
-                row.append("")
-            else:
-                row.append(str(value))
+            row.append(self._normalise_cell(value))
         self.rows.append(row)
 
     def to_file(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        sheet_xml = self._sheet()
         with ZipFile(path, "w", ZIP_DEFLATED) as archive:
             archive.writestr("[Content_Types].xml", self._content_types())
             archive.writestr("_rels/.rels", self._rels_root())
             archive.writestr("xl/workbook.xml", self._workbook())
             archive.writestr("xl/_rels/workbook.xml.rels", self._workbook_rels())
             archive.writestr("xl/styles.xml", self._styles())
-            archive.writestr("xl/worksheets/sheet1.xml", self._sheet())
+            archive.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+            if self._image_anchors:
+                archive.writestr("xl/worksheets/_rels/sheet1.xml.rels", self._sheet_rels())
+                archive.writestr("xl/drawings/drawing1.xml", self._drawing())
+                archive.writestr("xl/drawings/_rels/drawing1.xml.rels", self._drawing_rels())
+                for index, (_, _, image) in enumerate(self._image_anchors, start=1):
+                    archive.writestr(
+                        f"xl/media/image{index}.{image.extension}",
+                        image.data,
+                    )
 
     def _sheet(self) -> str:
         rows_xml: list[str] = []
+        image_anchors: list[tuple[int, int, _XlsxImage]] = []
         for row_index, row in enumerate(self.rows, start=1):
             cells: list[str] = []
             for column_index, value in enumerate(row):
                 cell_reference = f"{self._column_letter(column_index)}{row_index}"
-                style = ' s="1"' if row_index == 1 else ""
-                text = escape(value, {"\n": "&#10;"})
-                cells.append(
-                    f'<c r="{cell_reference}" t="inlineStr"{style}><is><t>{text}</t></is></c>'
-                )
+                style_index = 1 if row_index == 1 else 2
+                style_attr = f' s="{style_index}"'
+                text = escape(value.text, {"\n": "&#10;"})
+                if value.formula:
+                    formula = escape(value.formula)
+                    cells.append(
+                        f'<c r="{cell_reference}" t="str"{style_attr}><f>{formula}</f><v>{text}</v></c>'
+                    )
+                else:
+                    cells.append(
+                        f'<c r="{cell_reference}" t="inlineStr"{style_attr}><is><t>{text}</t></is></c>'
+                    )
+                if value.image is not None and row_index > 1:
+                    image_anchors.append((row_index - 1, column_index, value.image))
             rows_xml.append(f'<row r="{row_index}">{"".join(cells)}</row>')
 
         sheet_data = "".join(rows_xml)
+        cols_xml = ""
+        if self.column_widths:
+            col_parts = []
+            for index, width in enumerate(self.column_widths, start=1):
+                col_parts.append(
+                    f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
+                )
+            cols_xml = f"<cols>{''.join(col_parts)}</cols>"
+        drawing_ref = ""
+        if image_anchors:
+            drawing_ref = '<drawing r:id="rId1"/>'
+        self._image_anchors = image_anchors
         return (
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
             "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" "
             "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
-            f"<sheetData>{sheet_data}</sheetData>"
+            f"{cols_xml}<sheetData>{sheet_data}</sheetData>{drawing_ref}"
             "</worksheet>"
         )
 
@@ -4098,17 +4197,91 @@ class _SimpleXlsxBuilder:
             "</workbook>"
         )
 
-    @staticmethod
-    def _content_types() -> str:
+    def _content_types(self) -> str:
+        defaults: dict[str, str] = {
+            "rels": "application/vnd.openxmlformats-package.relationships+xml",
+            "xml": "application/xml",
+        }
+        overrides: list[tuple[str, str]] = [
+            ("/xl/workbook.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"),
+            ("/xl/worksheets/sheet1.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"),
+            ("/xl/styles.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"),
+        ]
+        if self._image_anchors:
+            overrides.append(
+                ("/xl/drawings/drawing1.xml", "application/vnd.openxmlformats-officedocument.drawing+xml")
+            )
+            for _, _, image in self._image_anchors:
+                defaults.setdefault(image.extension, image.content_type)
+
+        parts = [
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">",
+        ]
+        for extension, content_type in defaults.items():
+            parts.append(
+                f'<Default Extension="{escape(extension)}" ContentType="{escape(content_type)}"/>'
+            )
+        for part_name, content_type in overrides:
+            parts.append(
+                f'<Override PartName="{escape(part_name)}" ContentType="{escape(content_type)}"/>'
+            )
+        parts.append("</Types>")
+        return "".join(parts)
+
+    def _sheet_rels(self) -> str:
         return (
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
-            "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
-            "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
-            "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
-            "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
-            "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
-            "</Types>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing\" Target=\"../drawings/drawing1.xml\"/>"
+            "</Relationships>"
+        )
+
+    def _drawing(self) -> str:
+        anchors: list[str] = []
+        for index, (row, column, image) in enumerate(self._image_anchors, start=1):
+            description = escape(image.description or f"Фото оплаты {index}")
+            anchors.append(
+                "<xdr:twoCellAnchor>"
+                f"<xdr:from><xdr:col>{column}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>"
+                f"<xdr:to><xdr:col>{column + 1}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{row + 1}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>"
+                "<xdr:pic>"
+                "<xdr:nvPicPr>"
+                f"<xdr:cNvPr id=\"{index}\" name=\"Image {index}\" descr=\"{description}\"/>"
+                "<xdr:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></xdr:cNvPicPr>"
+                "</xdr:nvPicPr>"
+                "<xdr:blipFill>"
+                f"<a:blip r:embed=\"rId{index}\"/>"
+                "<a:stretch><a:fillRect/></a:stretch>"
+                "</xdr:blipFill>"
+                "<xdr:spPr>"
+                "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>"
+                "</xdr:spPr>"
+                "</xdr:pic>"
+                "<xdr:clientData/>"
+                "</xdr:twoCellAnchor>"
+            )
+
+        return (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            "<xdr:wsDr xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" "
+            "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
+            "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+            f"{''.join(anchors)}"
+            "</xdr:wsDr>"
+        )
+
+    def _drawing_rels(self) -> str:
+        relationships: list[str] = []
+        for index, (_, _, image) in enumerate(self._image_anchors, start=1):
+            relationships.append(
+                f'<Relationship Id="rId{index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image{index}.{image.extension}"/>'
+            )
+        return (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            f"{''.join(relationships)}"
+            "</Relationships>"
         )
 
     @staticmethod
@@ -4142,9 +4315,10 @@ class _SimpleXlsxBuilder:
             "<fills count=\"1\"><fill><patternFill patternType=\"none\"/></fill></fills>"
             "<borders count=\"1\"><border><left/><right/><top/><bottom/><diagonal/></border></borders>"
             "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>"
-            "<cellXfs count=\"2\">"
+            "<cellXfs count=\"3\">"
             "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>"
             "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>"
+            "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyAlignment=\"1\"><alignment wrapText=\"1\"/></xf>"
             "</cellXfs>"
             "<cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles>"
             "</styleSheet>"
@@ -4165,6 +4339,363 @@ class _SimpleXlsxBuilder:
         if not sanitized:
             sanitized = "Sheet1"
         return sanitized[:31]
+
+    @staticmethod
+    def _normalise_cell(value: Any) -> _XlsxCell:
+        if isinstance(value, _XlsxCell):
+            return value
+        if isinstance(value, _XlsxImage):
+            return _XlsxCell("", image=value)
+        if value is None:
+            return _XlsxCell("")
+        return _XlsxCell(str(value))
+
+
+@dataclass
+class _GoogleSheetSyncResult:
+    url: Optional[str]
+    updated: bool
+    error: Optional[str] = None
+
+
+class _GoogleSheetsExporter:
+    """Synchronise admin exports with a Google Sheets document."""
+
+    DEFAULT_SPREADSHEET_ID = "1DreSJ4xpKFFtcrJN1IJBJ51MOa7_RcqGXAmKYhWSlfA"
+    SERVICE_ACCOUNT_JSON_ENV = "CONFETTI_GOOGLE_SERVICE_ACCOUNT_JSON"
+    SERVICE_ACCOUNT_FILE_ENV = "CONFETTI_GOOGLE_SERVICE_ACCOUNT_FILE"
+    DEFAULT_SERVICE_ACCOUNT_CANDIDATES: tuple[str, ...] = (
+        "confetti_service_account.json",
+        "service_account.json",
+    )
+    SCOPES = (
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
+    )
+
+    def __init__(
+        self,
+        spreadsheet_id: str,
+        credentials: GoogleServiceAccountCredentials,
+        *,
+        service_account_email: Optional[str] = None,
+    ) -> None:
+        self.spreadsheet_id = spreadsheet_id
+        self._credentials = credentials
+        self._service_account_email = service_account_email
+        self._service: Optional[Any] = None
+        self._sheet_id: Optional[int] = None
+        self._sheet_title: Optional[str] = None
+        self._spreadsheet_url: Optional[str] = None
+
+    @property
+    def service_account_email(self) -> Optional[str]:
+        return self._service_account_email
+
+    @classmethod
+    def from_env(cls) -> Optional["_GoogleSheetsExporter"]:
+        if (
+            GoogleServiceAccountCredentials is None
+            or google_build is None
+            or GoogleAuthRequest is None
+        ):
+            LOGGER.info(
+                "Библиотеки Google Sheets не установлены или недоступны, экспорт будет только в XLSX."
+            )
+            return None
+
+        service_account_info: Optional[dict[str, Any]] = None
+        service_account_email: Optional[str] = None
+
+        json_blob = os.environ.get(cls.SERVICE_ACCOUNT_JSON_ENV)
+        if json_blob:
+            json_blob = json_blob.strip()
+        if json_blob:
+            json_blob = json_blob.lstrip("'\"").rstrip("'\"")
+            try:
+                service_account_info = json.loads(json_blob)
+            except json.JSONDecodeError:
+                LOGGER.warning(
+                    "Не удалось разобрать JSON сервисного аккаунта из %s.",
+                    cls.SERVICE_ACCOUNT_JSON_ENV,
+                )
+                service_account_info = None
+        if service_account_info is None:
+            credentials_path = os.environ.get(cls.SERVICE_ACCOUNT_FILE_ENV)
+            if credentials_path:
+                credentials_path = credentials_path.strip()
+            if credentials_path:
+                try:
+                    payload = Path(credentials_path).read_text(encoding="utf-8")
+                    service_account_info = json.loads(payload)
+                except (OSError, json.JSONDecodeError) as exc:
+                    LOGGER.warning(
+                        "Не удалось прочитать сервисный аккаунт из файла %s: %s",
+                        credentials_path,
+                        exc,
+                    )
+                    service_account_info = None
+
+        if service_account_info is None:
+            base_dir = Path(__file__).resolve().parent
+            search_roots = (
+                Path.cwd(),
+                base_dir,
+                base_dir / "data",
+            )
+            for root in search_roots:
+                for filename in cls.DEFAULT_SERVICE_ACCOUNT_CANDIDATES:
+                    candidate = root / filename
+                    if not candidate.exists() or not candidate.is_file():
+                        continue
+                    try:
+                        payload = candidate.read_text(encoding="utf-8")
+                        service_account_info = json.loads(payload)
+                        LOGGER.info(
+                            "Загружен сервисный аккаунт Google из файла %s.",
+                            candidate,
+                        )
+                        break
+                    except (OSError, json.JSONDecodeError) as exc:
+                        LOGGER.warning(
+                            "Не удалось прочитать сервисный аккаунт из файла %s: %s",
+                            candidate,
+                            exc,
+                        )
+                        service_account_info = None
+                if service_account_info is not None:
+                    break
+
+        if not service_account_info:
+            LOGGER.info(
+                "Сервисный аккаунт Google не настроен, пропускаем синхронизацию Google Sheets."
+            )
+            return None
+
+        service_account_email = service_account_info.get("client_email")
+
+        try:
+            credentials = GoogleServiceAccountCredentials.from_service_account_info(
+                service_account_info,
+                scopes=cls.SCOPES,
+            )
+        except (ValueError, TypeError) as exc:
+            LOGGER.warning("Некорректные данные сервисного аккаунта: %s", exc)
+            return None
+
+        spreadsheet_id = os.environ.get("CONFETTI_GOOGLE_SHEETS_ID")
+        if spreadsheet_id:
+            spreadsheet_id = spreadsheet_id.strip()
+        if not spreadsheet_id:
+            spreadsheet_id = cls.DEFAULT_SPREADSHEET_ID
+
+        return cls(
+            spreadsheet_id,
+            credentials,
+            service_account_email=service_account_email,
+        )
+
+    def sync(
+        self,
+        rows: Sequence[Sequence[_XlsxCell]],
+        column_widths: Sequence[float],
+    ) -> Optional[str]:
+        if not rows:
+            return self._spreadsheet_url or self._build_spreadsheet_url()
+
+        service = self._build_service()
+        self._ensure_sheet_metadata(service)
+
+        sheet_title = self._sheet_title or "Заявки"
+        escaped_title = sheet_title.replace("'", "''")
+        clear_range = f"'{escaped_title}'"
+        update_range = f"'{escaped_title}'!A1"
+
+        normalised_rows = [self._normalise_row(row) for row in rows]
+        values = [
+            [cell.formula if cell.formula else cell.text for cell in row]
+            for row in normalised_rows
+        ]
+
+        try:
+            service.spreadsheets().values().clear(
+                spreadsheetId=self.spreadsheet_id,
+                range=clear_range,
+            ).execute()
+            service.spreadsheets().values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=update_range,
+                valueInputOption="USER_ENTERED",
+                body={"values": values},
+            ).execute()
+            column_count = max(len(row) for row in normalised_rows)
+            self._apply_formatting(service, column_count, column_widths)
+        except GoogleHttpError as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Ошибка обновления Google Sheets: %s", exc)
+            return None
+
+        return self._spreadsheet_url or self._build_spreadsheet_url()
+
+    def _build_service(self) -> Any:
+        if self._service is not None:
+            return self._service
+
+        try:
+            self._credentials.refresh(GoogleAuthRequest())
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Не удалось обновить OAuth-токен Google: %s", exc)
+            raise
+
+        self._service = google_build(
+            "sheets",
+            "v4",
+            credentials=self._credentials,
+            cache_discovery=False,
+        )
+        return self._service
+
+    def _ensure_sheet_metadata(self, service: Any) -> None:
+        if self._sheet_title and self._sheet_id is not None and self._spreadsheet_url:
+            return
+
+        try:
+            metadata = service.spreadsheets().get(
+                spreadsheetId=self.spreadsheet_id,
+            ).execute()
+        except GoogleHttpError as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Не удалось получить свойства Google Sheets: %s", exc)
+            raise
+
+        self._spreadsheet_url = metadata.get("spreadsheetUrl")
+        sheets = metadata.get("sheets") or []
+        preferred = "Заявки"
+        fallback: Optional[dict[str, Any]] = None
+        for sheet in sheets:
+            props = sheet.get("properties") or {}
+            if fallback is None:
+                fallback = props
+            if props.get("title") == preferred:
+                self._sheet_id = props.get("sheetId")
+                self._sheet_title = props.get("title")
+                break
+        else:
+            if fallback:
+                self._sheet_id = fallback.get("sheetId")
+                self._sheet_title = fallback.get("title")
+
+        if self._sheet_title is None:
+            self._sheet_title = preferred
+
+    def _apply_formatting(
+        self,
+        service: Any,
+        column_count: int,
+        column_widths: Sequence[float],
+    ) -> None:
+        if self._sheet_id is None or column_count <= 0:
+            return
+
+        requests: list[dict[str, Any]] = [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": self._sheet_id,
+                        "gridProperties": {"frozenRowCount": 1},
+                    },
+                    "fields": "gridProperties.frozenRowCount",
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": self._sheet_id,
+                        "startRowIndex": 0,
+                        "endRowIndex": 1,
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "textFormat": {"bold": True},
+                            "horizontalAlignment": "CENTER",
+                            "wrapStrategy": "WRAP",
+                        }
+                    },
+                    "fields": "userEnteredFormat(textFormat,horizontalAlignment,wrapStrategy)",
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": self._sheet_id,
+                        "startRowIndex": 1,
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "wrapStrategy": "WRAP",
+                        }
+                    },
+                    "fields": "userEnteredFormat.wrapStrategy",
+                }
+            },
+        ]
+
+        width_values = list(column_widths)
+        for index in range(column_count):
+            if width_values:
+                base_width = width_values[index] if index < len(width_values) else width_values[-1]
+            else:
+                base_width = 20.0
+            requests.append(
+                {
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": self._sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": index,
+                            "endIndex": index + 1,
+                        },
+                        "properties": {"pixelSize": self._column_width_to_pixels(base_width)},
+                        "fields": "pixelSize",
+                    }
+                }
+            )
+
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=self.spreadsheet_id,
+                body={"requests": requests},
+            ).execute()
+        except GoogleHttpError:  # pragma: no cover - network dependent
+            LOGGER.debug("Не удалось применить форматирование для Google Sheets.")
+
+    @staticmethod
+    def _column_width_to_pixels(width: float) -> int:
+        width = max(width, 1.0)
+        return max(int(round(width * 7 + 5)), 40)
+
+    @staticmethod
+    def _build_spreadsheet_url_from_id(spreadsheet_id: str) -> str:
+        return f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+
+    def _build_spreadsheet_url(self) -> str:
+        return self._spreadsheet_url or self._build_spreadsheet_url_from_id(self.spreadsheet_id)
+
+    @property
+    def url(self) -> str:
+        return self._build_spreadsheet_url()
+
+    @staticmethod
+    def _normalise_row(row: Sequence[_XlsxCell]) -> list[_XlsxCell]:
+        normalised: list[_XlsxCell] = []
+        for cell in row:
+            if isinstance(cell, _XlsxCell):
+                normalised.append(cell)
+            elif isinstance(cell, _XlsxImage):
+                normalised.append(_XlsxCell("", image=cell))
+            elif cell is None:
+                normalised.append(_XlsxCell(""))
+            else:
+                normalised.append(_XlsxCell(str(cell)))
+        return normalised
 
 
 def _normalise_admin_chat_ids(chat_ids: AdminChatIdsInput) -> frozenset[int]:
@@ -4217,7 +4748,19 @@ def _coerce_chat_id_from_object(chat: Any) -> int:
 def main() -> None:  # pragma: no cover - thin wrapper
     """Entry point used by the console script in the original project."""
 
+    if sys.platform.startswith("win"):
+        # python-telegram-bot relies on selector event loops which are not the default
+        # on Windows since Python 3.8+.  Switching to the selector policy prevents the
+        # application from hanging inside ``run_polling`` during shutdown.
+        try:  # pragma: no cover - specific to Windows runtime
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        except AttributeError:
+            pass
+
     logging.basicConfig(level=logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("telegram.ext").setLevel(logging.WARNING)
+    logging.getLogger("telegram.vendor.ptb.urllib3").setLevel(logging.WARNING)
 
     _load_environment_files()
 
@@ -4321,14 +4864,44 @@ def _apply_env_file(path: Path) -> None:
         LOGGER.warning("Failed to read environment file %s: %s", path, exc)
         return
 
+    pending_key: Optional[str] = None
+    pending_quote: Optional[str] = None
+    pending_value_lines: list[str] = []
+
     for line in content.splitlines():
+        if pending_key is not None and pending_quote is not None:
+            pending_value_lines.append(line)
+            if _line_closes_multiline_value(line, pending_quote):
+                closing_line = pending_value_lines[-1].rstrip()
+                closing_line = closing_line[:-1]
+                pending_value_lines[-1] = closing_line
+                value = "\n".join(pending_value_lines)
+                if pending_key not in os.environ:
+                    os.environ[pending_key] = value
+                pending_key = None
+                pending_quote = None
+                pending_value_lines = []
+            continue
+
         parsed = _parse_env_assignment(line)
         if not parsed:
             continue
         key, value = parsed
         if key in os.environ:
             continue
+        if _value_is_multiline_stub(value):
+            pending_key = key
+            pending_quote = value[0]
+            pending_value_lines = [value[1:]]
+            continue
         os.environ[key] = value
+
+    if pending_key is not None and pending_quote is not None:
+        LOGGER.warning(
+            "Environment variable %s appears to have an unterminated multi-line value in %s",
+            pending_key,
+            path,
+        )
 
 
 def _parse_env_assignment(line: str) -> Optional[tuple[str, str]]:
@@ -4357,6 +4930,29 @@ def _parse_env_assignment(line: str) -> Optional[tuple[str, str]]:
         value = value[1:-1]
 
     return key, value
+
+
+def _value_is_multiline_stub(value: str) -> bool:
+    if not value:
+        return False
+    if value[0] not in {'"', "'"}:
+        return False
+    if len(value) == 1:
+        return True
+    return value[-1] != value[0]
+
+
+def _line_closes_multiline_value(line: str, quote: str) -> bool:
+    stripped = line.rstrip()
+    if not stripped.endswith(quote):
+        return False
+    escape_count = 0
+    for char in reversed(stripped[:-1]):
+        if char == "\\":
+            escape_count += 1
+        else:
+            break
+    return escape_count % 2 == 0
 
 
 def _read_token_file(path: Path) -> Optional[str]:
