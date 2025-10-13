@@ -316,12 +316,11 @@ class ConfettiTelegramBot:
 
     REGISTRATION_PROGRAM = 1
     REGISTRATION_CHILD_NAME = 2
-    REGISTRATION_CLASS = 3
-    REGISTRATION_PHONE = 4
-    REGISTRATION_TIME = 5
-    REGISTRATION_PAYMENT = 6
-    REGISTRATION_CONFIRM_DETAILS = 7
-    REGISTRATION_TIME_DECISION = 8
+    REGISTRATION_SCHOOL = 3
+    REGISTRATION_CLASS = 4
+    REGISTRATION_CONTACT_NAME = 5
+    REGISTRATION_PHONE = 6
+    REGISTRATION_COMMENT = 7
 
     CANCELLATION_PROGRAM = 21
     CANCELLATION_CONTACT = 22
@@ -336,10 +335,6 @@ class ConfettiTelegramBot:
     MAIN_MENU_BUTTON = "⬅️ Главное меню"
     REGISTRATION_BUTTON = "📝 Запись"
     CANCELLATION_BUTTON = "❗️ Сообщить об отсутствии"
-    REGISTRATION_CONFIRM_SAVED_BUTTON = "✅ Продолжить"
-    REGISTRATION_EDIT_DETAILS_BUTTON = "✏️ Изменить данные"
-    REGISTRATION_KEEP_TIME_BUTTON = "🔁 То же время"
-    REGISTRATION_NEW_TIME_BUTTON = "⏰ Другое время"
     BACK_BUTTON = "◀️ Назад"
     PAYMENT_REPORT_BUTTON = "💳 Сообщить об оплате"
     ADMIN_MENU_BUTTON = "🛠 Админ-панель"
@@ -360,10 +355,11 @@ class ConfettiTelegramBot:
         20,
         36,
         30,
-        22,
+        30,
         18,
-        26,
-        24,
+        30,
+        18,
+        32,
     )
 
     PAYMENT_EXPORT_COLUMN_WIDTHS = (
@@ -376,12 +372,6 @@ class ConfettiTelegramBot:
 
     PAYMENTS_SPREADSHEET_ENV = "CONFETTI_PAYMENTS_SHEETS_ID"
     DEFAULT_PAYMENTS_SPREADSHEET_ID = "1dPD-mvtncpl0Fn2VYBE2VPSHZESk9NGJxfGNUljHOr0"
-
-    TIME_OF_DAY_OPTIONS = (
-        "☀️ Утро: 10:00 – 12:00",
-        "🌤 День: 14:00 – 16:00",
-        "🌙 Вечер: 18:00 – 20:00",
-    )
 
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание"),
@@ -796,10 +786,12 @@ class ConfettiTelegramBot:
 
                 entry: dict[str, Any] = {
                     "child_name": _text("child_name"),
+                    "school": _text("school"),
                     "class": _text("class"),
+                    "contact_name": _text("contact_name"),
                     "phone": _text("phone"),
                     "last_program": _text("last_program"),
-                    "last_time": _text("last_time"),
+                    "last_comment": _text("last_comment"),
                 }
 
                 registrations_payload = value.get("registrations")
@@ -818,9 +810,12 @@ class ConfettiTelegramBot:
                             {
                                 "id": reg_id,
                                 "program": _item_text(item, "program"),
-                                "time": _item_text(item, "time"),
                                 "child_name": _item_text(item, "child_name"),
+                                "school": _item_text(item, "school"),
                                 "class": _item_text(item, "class"),
+                                "contact_name": _item_text(item, "contact_name"),
+                                "phone": _item_text(item, "phone"),
+                                "comment": _item_text(item, "comment"),
                                 "created_at": _item_text(item, "created_at"),
                             }
                         )
@@ -945,10 +940,12 @@ class ConfettiTelegramBot:
         if isinstance(entry, dict):
             return {
                 "child_name": entry.get("child_name", ""),
+                "school": entry.get("school", ""),
                 "class": entry.get("class", ""),
+                "contact_name": entry.get("contact_name", ""),
                 "phone": entry.get("phone", ""),
                 "program": entry.get("last_program", ""),
-                "time": entry.get("last_time", ""),
+                "comment": entry.get("last_comment", ""),
             }
         return {}
 
@@ -970,15 +967,18 @@ class ConfettiTelegramBot:
         changed = False
         for source_key, target_key in (
             ("child_name", "child_name"),
+            ("school", "school"),
             ("class", "class"),
+            ("contact_name", "contact_name"),
             ("phone", "phone"),
+            ("comment", "last_comment"),
         ):
             value = str(data.get(source_key, ""))
             if entry.get(target_key) != value:
                 entry[target_key] = value
                 changed = True
 
-        for source_key, target_key in (("program", "last_program"), ("time", "last_time")):
+        for source_key, target_key in (("program", "last_program"),):
             value = data.get(source_key)
             if value is None:
                 continue
@@ -1028,9 +1028,12 @@ class ConfettiTelegramBot:
         snapshot = {
             "id": record_id_str,
             "program": str(record.get("program", "")),
-            "time": str(record.get("time", "")),
             "child_name": str(record.get("child_name", "")),
+            "school": str(record.get("school", "")),
             "class": str(record.get("class", "")),
+            "contact_name": str(record.get("contact_name", "")),
+            "phone": str(record.get("phone", "")),
+            "comment": str(record.get("comment", "")),
             "created_at": str(record.get("created_at", "")),
         }
         changed = False
@@ -1054,8 +1057,14 @@ class ConfettiTelegramBot:
             if snapshot["program"] and entry.get("last_program") != snapshot["program"]:
                 entry["last_program"] = snapshot["program"]
                 changed = True
-            if snapshot["time"] and entry.get("last_time") != snapshot["time"]:
-                entry["last_time"] = snapshot["time"]
+            for field in ("child_name", "school", "class", "contact_name", "phone"):
+                value = snapshot.get(field, "")
+                if value and entry.get(field) != value:
+                    entry[field] = value
+                    changed = True
+            comment = snapshot.get("comment", "")
+            if comment and entry.get("last_comment") != comment:
+                entry["last_comment"] = comment
                 changed = True
         return changed
 
@@ -1082,11 +1091,32 @@ class ConfettiTelegramBot:
                 changed = True
                 if registrations:
                     latest = registrations[-1]
-                    entry["last_program"] = str(latest.get("program", ""))
-                    entry["last_time"] = str(latest.get("time", ""))
+                    for field, target in (
+                        ("program", "last_program"),
+                        ("child_name", "child_name"),
+                        ("school", "school"),
+                        ("class", "class"),
+                        ("contact_name", "contact_name"),
+                        ("phone", "phone"),
+                        ("comment", "last_comment"),
+                    ):
+                        value = str(latest.get(field, ""))
+                        if entry.get(target) != value:
+                            entry[target] = value
+                            changed = True
                 else:
-                    entry["last_program"] = ""
-                    entry["last_time"] = ""
+                    for target in (
+                        "last_program",
+                        "child_name",
+                        "school",
+                        "class",
+                        "contact_name",
+                        "phone",
+                        "last_comment",
+                    ):
+                        if entry.get(target):
+                            entry[target] = ""
+                            changed = True
         return changed
 
     def _collect_user_registrations(
@@ -1192,102 +1222,108 @@ class ConfettiTelegramBot:
                     )
                 ],
                 states={
-                self.REGISTRATION_PROGRAM: [
-                    CallbackQueryHandler(
-                        self._registration_collect_program,
-                        pattern=r"^reg_program:\d+$",
-                    ),
-                    CallbackQueryHandler(
-                        self._registration_cancel_from_program,
-                        pattern=r"^reg_back:menu$",
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                    MessageHandler(
-                        filters.TEXT & ~filters.COMMAND,
-                        self._registration_prompt_program_buttons,
-                    ),
-                ],
-                self.REGISTRATION_CHILD_NAME: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._registration_back_to_program,
-                    ),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_child_name),
-                ],
-                self.REGISTRATION_CLASS: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._registration_back_to_child_name,
-                    ),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_class),
-                ],
-                self.REGISTRATION_PHONE: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_phone_text),
-                ],
-                self.REGISTRATION_CONFIRM_DETAILS: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.REGISTRATION_CONFIRM_SAVED_BUTTON)),
-                        self._registration_accept_saved_details,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.REGISTRATION_EDIT_DETAILS_BUTTON)),
-                        self._registration_request_details_update,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._registration_back_from_confirm,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                ],
-                self.REGISTRATION_TIME_DECISION: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.REGISTRATION_KEEP_TIME_BUTTON)),
-                        self._registration_use_saved_time,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.REGISTRATION_NEW_TIME_BUTTON)),
-                        self._registration_request_new_time,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._registration_back_from_time_decision,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                ],
-                self.REGISTRATION_TIME: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._registration_back_from_time,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._time_regex()),
-                        self._registration_collect_time,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                ],
-                self.REGISTRATION_PAYMENT: [
-                    MessageHandler(~filters.COMMAND, self._registration_collect_payment),
-                ],
+                    self.REGISTRATION_PROGRAM: [
+                        CallbackQueryHandler(
+                            self._registration_collect_program,
+                            pattern=r"^reg_program:\d+$",
+                        ),
+                        CallbackQueryHandler(
+                            self._registration_cancel_from_program,
+                            pattern=r"^reg_back:menu$",
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_prompt_program_buttons,
+                        ),
+                    ],
+                    self.REGISTRATION_CHILD_NAME: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_program,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_child_name,
+                        ),
+                    ],
+                    self.REGISTRATION_SCHOOL: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_child_name,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_school,
+                        ),
+                    ],
+                    self.REGISTRATION_CLASS: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_school,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_class,
+                        ),
+                    ],
+                    self.REGISTRATION_CONTACT_NAME: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_class,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_contact_name,
+                        ),
+                    ],
+                    self.REGISTRATION_PHONE: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_contact,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_phone_text,
+                        ),
+                    ],
+                    self.REGISTRATION_COMMENT: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_phone,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_comment,
+                        ),
+                    ],
                 },
                 fallbacks=[
                     CommandHandler("cancel", self._registration_cancel),
@@ -1464,10 +1500,6 @@ class ConfettiTelegramBot:
 
     def _exact_match_regex(self, text: str) -> str:
         return rf"^{re.escape(text)}$"
-
-    def _time_regex(self) -> str:
-        parts = [re.escape(option) for option in self.TIME_OF_DAY_OPTIONS]
-        return rf"^({'|'.join(parts)})$"
 
     # ------------------------------------------------------------------
     # Shared messaging helpers
@@ -1653,36 +1685,28 @@ class ConfettiTelegramBot:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         data: dict[str, Any],
-        attachments: Optional[list[MediaAttachment]] = None,
     ) -> dict[str, Any]:
         chat = update.effective_chat
         user = update.effective_user
         record_id = data.get("id") or self._generate_registration_id()
         program_label = data.get("program", "")
         teacher = data.get("teacher") or self._resolve_program_teacher(str(program_label))
-        stored_media = data.get("payment_media", [])
-        if attachments and stored_media:
-            payment_media = stored_media
-        elif attachments:
-            payment_media = self._attachments_to_dicts(attachments)
-        else:
-            payment_media = stored_media
 
         record = {
             "id": record_id,
             "program": program_label,
             "teacher": teacher,
             "child_name": data.get("child_name", ""),
+            "school": data.get("school", ""),
             "class": data.get("class", ""),
+            "contact_name": data.get("contact_name", ""),
             "phone": data.get("phone", ""),
-            "time": data.get("time", ""),
+            "comment": data.get("comment", ""),
             "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
             "chat_title": getattr(chat, "title", None) if chat else None,
             "submitted_by": getattr(user, "full_name", None) if user else None,
             "submitted_by_id": getattr(user, "id", None) if user else None,
             "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-            "payment_note": data.get("payment_note", ""),
-            "payment_media": payment_media,
         }
         registrations = self._application_data(context).setdefault("registrations", [])
         needs_save = False
@@ -2435,99 +2459,111 @@ class ConfettiTelegramBot:
 
         defaults = self._get_user_defaults(update.effective_user)
         if defaults:
-            for key in ("child_name", "class", "phone"):
+            for key in ("child_name", "school", "class", "contact_name", "phone", "comment"):
                 value = defaults.get(key)
-                if value:
+                if value and not registration.get(key):
                     registration[key] = value
 
-        saved_time = ""
-        user_records = self._collect_user_registrations(update.effective_user, update.effective_chat)
-        for record in reversed(user_records):
-            if record.get("program") == program_label and record.get("time"):
-                saved_time = str(record.get("time"))
-                break
-        if not saved_time and defaults:
-            saved_time = str(defaults.get("time", "") or "")
-        if saved_time:
-            registration["saved_time"] = saved_time
-            registration["saved_time_original"] = saved_time
-        else:
-            registration.pop("saved_time_original", None)
-            registration["saved_time"] = saved_time
-
-        if not registration.get("child_name"):
-            return await self._registration_prompt_child_name(update, context)
-
-        if not registration.get("class"):
-            return await self._registration_prompt_class(update, context, remind=True)
-
-        if not registration.get("phone"):
-            return await self._registration_prompt_phone(update, context, remind=True)
-
-        return await self._registration_show_saved_details_prompt(update, context)
+        return await self._registration_prompt_child_name(update, context)
 
     async def _registration_prompt_child_name(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
+        program = registration.get("program", "направление")
         if remind and registration.get("child_name"):
             message = (
-                f"Сейчас указано имя: {registration.get('child_name', '—')}.\n"
-                "Введите новое имя и фамилию ребёнка."
-            )
+                f"Сейчас указано имя: {registration.get('child_name', '—')}.")
+            message += "\nВведите имя и фамилию ребёнка для записи."
         else:
-            message = "Отлично! Напишите, пожалуйста, имя и фамилию ребёнка."
+            message = (
+                f"Отлично! Напишите, пожалуйста, имя и фамилию ребёнка для "
+                f"участия в программе «{program}»."
+            )
         await self._reply(update, message, reply_markup=self._back_keyboard())
         return self.REGISTRATION_CHILD_NAME
+
+    async def _registration_prompt_school(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        child_name = registration.get("child_name", "—")
+        if remind and registration.get("school"):
+            message = (
+                f"Участник: {child_name}.\n"
+                f"Сейчас указана школа: {registration.get('school', '—')}.")
+            message += "\nУточните школу ребёнка."
+        else:
+            message = (
+                f"Имя участника: {child_name}.\n"
+                "Укажите, пожалуйста, школу ребёнка."
+            )
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.REGISTRATION_SCHOOL
 
     async def _registration_prompt_class(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
         child_name = registration.get("child_name", "—")
+        school = registration.get("school", "—")
         if remind and registration.get("class"):
             message = (
                 f"Имя участника: {child_name}.\n"
-                f"Текущий класс: {registration.get('class', '—')}.\n"
-                "Укажите актуальный класс."
-            )
+                f"Школа: {school}.\n"
+                f"Текущий класс: {registration.get('class', '—')}.")
+            message += "\nУкажите актуальный класс."
         else:
-            message = f"Мы сохранили имя: {child_name}.\nУкажите, пожалуйста, класс."
+            message = (
+                f"Мы записали: {child_name}, школа {school}.\n"
+                "Напишите, пожалуйста, класс или возраст ребёнка."
+            )
         await self._reply(update, message, reply_markup=self._back_keyboard())
         return self.REGISTRATION_CLASS
+
+    async def _registration_prompt_contact_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        if remind and registration.get("contact_name"):
+            message = (
+                f"Сейчас указано контактное лицо: {registration.get('contact_name', '—')}.")
+            message += "\nВведите фамилию и имя человека для связи."
+        else:
+            message = "Укажите фамилию и имя контактного лица для связи."
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.REGISTRATION_CONTACT_NAME
 
     async def _registration_prompt_phone(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
-        child_name = registration.get("child_name", "—")
-        child_class = registration.get("class", "—")
+        contact = registration.get("contact_name", "—")
         if remind and registration.get("phone"):
             message = (
-                f"Имя и класс: {child_name} ({child_class}).\n"
-                f"Сейчас указан номер: {registration.get('phone', '—')}.\n"
-                "Введите номер телефона вручную."
-            )
+                f"Контактное лицо: {contact}.\n"
+                f"Сейчас указан номер: {registration.get('phone', '—')}.")
+            message += "\nВведите актуальный номер телефона."
         else:
             message = (
-                f"Мы сохранили имя и класс: {child_name} ({child_class}).\n"
-                "Введите номер телефона вручную."
+                f"Контактное лицо: {contact}.\n"
+                "Введите номер телефона для связи."
             )
         await self._reply(update, message, reply_markup=self._phone_keyboard())
         return self.REGISTRATION_PHONE
 
-    async def _registration_show_saved_details_prompt(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    async def _registration_prompt_comment(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
-        message = (
-            "Мы заполнили данные из вашей предыдущей заявки:\n"
-            f"👦 Имя: {registration.get('child_name', '—')} ({registration.get('class', '—')})\n"
-            f"📱 Телефон: {registration.get('phone', '—')}\n\n"
-            "Нажмите «Продолжить», если всё верно, или «Изменить данные», чтобы указать новые значения."
-        )
-        await self._reply(update, message, reply_markup=self._saved_details_keyboard())
-        return self.REGISTRATION_CONFIRM_DETAILS
+        if remind and registration.get("comment"):
+            message = (
+                f"Текущий комментарий: {registration.get('comment', '—')}.")
+            message += "\nВведите новый комментарий или укажите «Нет»."
+        else:
+            message = "Добавьте комментарий или особые пожелания. Если нечего добавить, напишите «Нет»."
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.REGISTRATION_COMMENT
 
     async def _registration_cancel_from_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -2548,7 +2584,16 @@ class ConfettiTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
-        for key in ("program", "teacher", "time", "saved_time", "saved_time_original", "proposed_time"):
+        for key in (
+            "program",
+            "teacher",
+            "child_name",
+            "school",
+            "class",
+            "contact_name",
+            "phone",
+            "comment",
+        ):
             registration.pop(key, None)
         await self._reply(
             update,
@@ -2560,54 +2605,85 @@ class ConfettiTelegramBot:
     async def _registration_back_to_child_name(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("child_name", "school", "class", "contact_name", "phone", "comment"):
+            registration.pop(key, None)
         return await self._registration_prompt_child_name(update, context, remind=True)
 
-    async def _registration_back_from_confirm(
+    async def _registration_back_to_school(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("school", "class", "contact_name", "phone", "comment"):
+            registration.pop(key, None)
+        return await self._registration_prompt_school(update, context, remind=True)
+
+    async def _registration_back_to_class(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("class", "contact_name", "phone", "comment"):
+            registration.pop(key, None)
+        return await self._registration_prompt_class(update, context, remind=True)
+
+    async def _registration_back_to_contact(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("contact_name", "phone", "comment"):
+            registration.pop(key, None)
+        return await self._registration_prompt_contact_name(update, context, remind=True)
+
+    async def _registration_back_to_phone(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("phone", "comment"):
+            registration.pop(key, None)
         return await self._registration_prompt_phone(update, context, remind=True)
 
-    async def _registration_back_from_time_decision(
+    async def _registration_collect_child_name(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        registration.pop("proposed_time", None)
-        return await self._registration_show_saved_details_prompt(update, context)
-
-    async def _registration_back_from_time(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        registration.pop("time", None)
-        if registration.get("saved_time_original"):
-            registration["saved_time"] = registration["saved_time_original"]
-            return await self._prompt_time_of_day(update, context)
-        return await self._prompt_time_selection(update)
-
-    async def _registration_back_to_time(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        registration.pop("payment_media", None)
-        registration.pop("payment_note", None)
-        return await self._registration_back_from_time(update, context)
-
-    async def _registration_collect_child_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         text = (update.message.text or "").strip()
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
         if text == self.BACK_BUTTON:
             return await self._registration_back_to_program(update, context)
         context.user_data.setdefault("registration", {})["child_name"] = text
-        return await self._registration_prompt_class(update, context)
+        return await self._registration_prompt_school(update, context)
 
-    async def _registration_collect_class(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async def _registration_collect_school(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
         text = (update.message.text or "").strip()
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
         if text == self.BACK_BUTTON:
-            return await self._registration_prompt_child_name(update, context, remind=True)
+            return await self._registration_back_to_child_name(update, context)
+        context.user_data.setdefault("registration", {})["school"] = text
+        return await self._registration_prompt_class(update, context)
+
+    async def _registration_collect_class(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._registration_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._registration_back_to_school(update, context)
         context.user_data.setdefault("registration", {})["class"] = text
+        return await self._registration_prompt_contact_name(update, context)
+
+    async def _registration_collect_contact_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._registration_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._registration_back_to_class(update, context)
+        context.user_data.setdefault("registration", {})["contact_name"] = text
         return await self._registration_prompt_phone(update, context)
 
     def _back_keyboard(self, *, include_menu: bool = True) -> ReplyKeyboardMarkup:
@@ -2626,24 +2702,8 @@ class ConfettiTelegramBot:
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
-    def _saved_details_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [
-            [KeyboardButton(self.REGISTRATION_CONFIRM_SAVED_BUTTON)],
-            [KeyboardButton(self.REGISTRATION_EDIT_DETAILS_BUTTON)],
-            [KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)],
-        ]
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-
     def _payment_keyboard(self) -> ReplyKeyboardMarkup:
         keyboard = [[KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)]]
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-
-    def _saved_time_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [
-            [KeyboardButton(self.REGISTRATION_KEEP_TIME_BUTTON)],
-            [KeyboardButton(self.REGISTRATION_NEW_TIME_BUTTON)],
-            [KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)],
-        ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     def _absence_intro(self) -> str:
@@ -2703,153 +2763,24 @@ class ConfettiTelegramBot:
     async def _registration_collect_phone_text(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        text = update.message.text.strip()
-        if text == self.MAIN_MENU_BUTTON:
-            return await self._registration_cancel(update, context)
-        if text == self.BACK_BUTTON:
-            return await self._registration_prompt_class(update, context, remind=True)
-        context.user_data.setdefault("registration", {})["phone"] = text
-        return await self._prompt_time_of_day(update, context)
-
-    async def _registration_accept_saved_details(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        return await self._prompt_time_of_day(update, context)
-
-    async def _registration_use_saved_time(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        saved_time = str(
-            registration.get("proposed_time")
-            or registration.get("saved_time")
-            or registration.get("time", "")
-        ).strip()
-        if not saved_time:
-            return await self._registration_request_new_time(update, context)
-        registration["time"] = saved_time
-        registration.setdefault("saved_time_original", saved_time)
-        registration.pop("saved_time", None)
-        registration.pop("proposed_time", None)
-        return await self._prompt_payment_request(update, context)
-
-    async def _registration_request_new_time(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        original = registration.get("saved_time") or registration.get("saved_time_original")
-        if original:
-            registration["saved_time_original"] = original
-        registration.pop("proposed_time", None)
-        registration.pop("saved_time", None)
-        return await self._prompt_time_selection(update)
-
-    async def _registration_request_details_update(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        for key in ("child_name", "class", "phone"):
-            registration.pop(key, None)
-        return await self._registration_prompt_child_name(update, context, remind=True)
-
-    async def _prompt_time_of_day(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        saved_time = str(registration.get("saved_time", "")).strip()
-        if saved_time:
-            registration.setdefault("saved_time_original", saved_time)
-            registration["proposed_time"] = saved_time
-            message = (
-                "⏱️ Ранее вы выбирали время: "
-                f"{saved_time}.\n"
-                "🔁 Нажмите «То же время», чтобы оставить его, или «Другое время», чтобы выбрать новый слот."
-            )
-            await self._reply(
-                update,
-                message,
-                reply_markup=self._saved_time_keyboard(),
-            )
-            return self.REGISTRATION_TIME_DECISION
-        return await self._prompt_time_selection(update)
-
-    async def _prompt_time_selection(self, update: Update) -> int:
-        await self._reply(
-            update,
-            "Выберите удобное время занятий.",
-            reply_markup=self._time_keyboard(),
-        )
-        return self.REGISTRATION_TIME
-
-    def _time_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [[option] for option in self.TIME_OF_DAY_OPTIONS]
-        keyboard.append([self.BACK_BUTTON, self.MAIN_MENU_BUTTON])
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-
-    async def _registration_collect_time(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         text = (update.message.text or "").strip()
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
         if text == self.BACK_BUTTON:
-            return await self._registration_back_from_time(update, context)
-        registration = context.user_data.setdefault("registration", {})
-        registration["time"] = text
-        if not registration.get("saved_time_original"):
-            registration["saved_time_original"] = text
-        registration.pop("saved_time", None)
-        registration.pop("proposed_time", None)
-        return await self._prompt_payment_request(update, context)
+            return await self._registration_back_to_contact(update, context)
+        context.user_data.setdefault("registration", {})["phone"] = text
+        return await self._registration_prompt_comment(update, context)
 
-    async def _prompt_payment_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        instructions = self._get_content(context).payment
-        message = (
-            "💳 Отправьте подтверждение оплаты — нам нужно фото или скан квитанции.\n\n"
-            "⚠️ Без подтверждения оплаты заявка не будет отправлена администраторам."
-        )
-        if instructions.text:
-            message += "\n\n" + instructions.text
-        await self._reply(
-            update,
-            message,
-            reply_markup=self._payment_keyboard(),
-            media=instructions.media or None,
-        )
-        return self.REGISTRATION_PAYMENT
-
-    async def _registration_collect_payment(
+    async def _registration_collect_comment(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        data = context.user_data.setdefault("registration", {})
-        text, attachments = self._extract_message_payload(update.message)
-
+        text = (update.message.text or "").strip()
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
-
         if text == self.BACK_BUTTON:
-            return await self._registration_back_to_time(update, context)
-
-        if text:
-            data["payment_note"] = text
-
-        if not attachments:
-            await self._reply(
-                update,
-                "📎 Пожалуйста, прикрепите фото чека или квитанции, чтобы завершить запись.",
-                reply_markup=self._payment_keyboard(),
-            )
-            return self.REGISTRATION_PAYMENT
-
-        if not any(item.kind == "photo" for item in attachments):
-            await self._reply(
-                update,
-                "🖼 Отправьте хотя бы одну фотографию подтверждения оплаты.",
-                reply_markup=self._payment_keyboard(),
-            )
-            return self.REGISTRATION_PAYMENT
-
-        data["payment_media"] = await self._serialise_payment_media(context, attachments)
-
-        await self._send_registration_summary(update, context, media=attachments or None)
+            return await self._registration_back_to_phone(update, context)
+        context.user_data.setdefault("registration", {})["comment"] = text
+        await self._send_registration_summary(update, context)
         await self._show_main_menu(update, context)
         return ConversationHandler.END
 
@@ -3255,47 +3186,56 @@ class ConfettiTelegramBot:
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
-        *,
-        media: Optional[list[MediaAttachment]] = None,
     ) -> None:
         data = context.user_data.get("registration", {})
-        attachments = media or self._dicts_to_attachments(data.get("payment_media"))
-        payment_note = data.get("payment_note")
-        payment_status = "✅ Оплата подтверждена" if attachments else "⏳ Оплата ожидается"
+        program = data.get("program", "—")
+        child = data.get("child_name", "—")
+        school = data.get("school", "—")
+        child_class = data.get("class", "—")
+        contact = data.get("contact_name", "—")
+        phone = data.get("phone", "—")
+        comment = data.get("comment", "—")
+        teacher_line = data.get("teacher") or self._resolve_program_teacher(str(program))
 
-        teacher_line = data.get("teacher") or self._resolve_program_teacher(str(data.get("program", "")))
-
-        summary = (
-            "Ваша заявка принята!\n\n"
-            f"👦 Участник: {data.get('child_name', '—')} ({data.get('class', '—')})\n"
-            f"📱 Телефон: {data.get('phone', '—')}\n"
-            f"🕒 Время: {data.get('time', '—')}\n"
-            f"📚 Программа: {data.get('program', '—')}\n"
-            f"💳 {payment_status}\n"
-        )
+        summary_lines = [
+            "Заявка отправлена!",
+            "",
+            f"📚 Программа: {program}",
+            f"👦 Ребёнок: {child}",
+            f"🏫 Школа: {school}",
+            f"🎓 Класс: {child_class}",
+            f"👤 Контактное лицо: {contact}",
+            f"📱 Телефон: {phone}",
+        ]
         if teacher_line:
-            summary += f"{teacher_line}\n"
-        if payment_note:
-            summary += f"📝 Комментарий: {payment_note}\n"
-        summary += "\nМы свяжемся с вами в ближайшее время."
+            summary_lines.append(teacher_line)
+        if comment and comment.strip():
+            summary_lines.append(f"📝 Комментарий: {comment}")
+        summary_lines.append("")
+        summary_lines.append("Мы свяжемся с вами в ближайшее время.")
 
-        await self._reply(update, summary, reply_markup=self._main_menu_markup_for(update, context))
-        record = self._store_registration(update, context, data, attachments)
-
-        admin_message = (
-            "🆕 Новая заявка\n"
-            f"📚 Программа: {data.get('program', '—')}\n"
-            f"👦 Участник: {data.get('child_name', '—')} ({data.get('class', '—')})\n"
-            f"📱 Телефон: {data.get('phone', '—')}\n"
-            f"🕒 Время: {data.get('time', '—')}\n"
-            f"💳 Статус оплаты: {'получено' if attachments else 'ожидается'}"
+        await self._reply(
+            update,
+            "\n".join(summary_lines),
+            reply_markup=self._main_menu_markup_for(update, context),
         )
-        if teacher_line:
-            admin_message += f"\n{teacher_line}"
-        if payment_note:
-            admin_message += f"\n📝 Комментарий: {payment_note}"
+        record = self._store_registration(update, context, data)
 
-        await self._notify_admins(context, admin_message, media=attachments or None)
+        admin_lines = [
+            "🆕 Новая заявка",
+            f"📚 Программа: {program}",
+            f"👦 Ребёнок: {child}",
+            f"🏫 Школа: {school}",
+            f"🎓 Класс: {child_class}",
+            f"👤 Контактное лицо: {contact}",
+            f"📱 Телефон: {phone}",
+        ]
+        if teacher_line:
+            admin_lines.append(teacher_line)
+        if comment and comment.strip():
+            admin_lines.append(f"📝 Комментарий: {comment}")
+
+        await self._notify_admins(context, "\n".join(admin_lines))
         context.user_data.pop("registration", None)
 
     # ------------------------------------------------------------------
@@ -3815,10 +3755,11 @@ class ConfettiTelegramBot:
             "Дата заявки",
             "Программа",
             "Участник",
+            "Школа",
             "Класс / возраст",
+            "Контактное лицо",
             "Телефон",
-            "Предпочтительное время",
-            "Отправитель",
+            "Комментарий",
         )
 
         def make_cell(value: Any) -> _XlsxCell:
@@ -3838,10 +3779,11 @@ class ConfettiTelegramBot:
                     make_cell(record.get("created_at") or ""),
                     make_cell(record.get("program") or ""),
                     make_cell(record.get("child_name") or ""),
+                    make_cell(record.get("school") or ""),
                     make_cell(record.get("class") or ""),
+                    make_cell(record.get("contact_name") or ""),
                     make_cell(record.get("phone") or ""),
-                    make_cell(record.get("time") or ""),
-                    make_cell(record.get("submitted_by") or ""),
+                    make_cell(record.get("comment") or ""),
                 ]
             )
 
@@ -4525,30 +4467,28 @@ class ConfettiTelegramBot:
         for index, record in enumerate(sorted_records, start=1):
             program = str(record.get("program", "")) or "Без программы"
             child = str(record.get("child_name", ""))
+            school = str(record.get("school", ""))
             grade = str(record.get("class", ""))
-            time_slot = str(record.get("time", ""))
+            contact = str(record.get("contact_name", ""))
+            phone = str(record.get("phone", ""))
+            comment = str(record.get("comment", ""))
             created_at = str(record.get("created_at", ""))
-            payment_note = str(record.get("payment_note", ""))
-            payment_media = record.get("payment_media") or []
 
             entry_lines = [f"{index}. {program}"]
-            details: list[str] = []
             if child:
-                details.append(child)
+                entry_lines.append(f"👦 {child}")
+            if school:
+                entry_lines.append(f"🏫 {school}")
             if grade:
-                details.append(f"класс: {grade}")
-            if time_slot:
-                details.append(f"время: {time_slot}")
-            if details:
-                entry_lines.append(" • ".join(details))
+                entry_lines.append(f"🎓 {grade}")
+            if contact:
+                entry_lines.append(f"👤 {contact}")
+            if phone:
+                entry_lines.append(f"📱 {phone}")
+            if comment:
+                entry_lines.append(f"📝 {comment}")
             if created_at:
                 entry_lines.append(f"📅 Заявка от: {created_at}")
-            if payment_media:
-                entry_lines.append("💳 Оплата: подтверждение во вложении")
-            elif payment_note:
-                entry_lines.append(f"💳 Оплата: {payment_note}")
-            else:
-                entry_lines.append("💳 Оплата: ожидается")
             lines.append("\n".join(entry_lines))
 
         text = "📋 Ваши заявки:\n\n" + "\n\n".join(lines)
