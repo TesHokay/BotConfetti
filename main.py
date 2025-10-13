@@ -1885,6 +1885,19 @@ class ConfettiTelegramBot:
                                 )
                             except Exception as exc:  # pragma: no cover - Telegram runtime dependent
                                 LOGGER.debug("Failed to edit media: %s", exc)
+                                caption = media[0].caption if media[0].caption else None
+                                if caption:
+                                    try:
+                                        await callback.message.edit_text(
+                                            caption,
+                                            reply_markup=inline_markup,
+                                        )
+                                    except Exception as text_exc:  # pragma: no cover - Telegram runtime dependent
+                                        LOGGER.debug("Failed to edit media caption as text: %s", text_exc)
+                                    else:
+                                        markup_used = inline_markup is not None
+                                        media = []
+                                        target = callback.message
                             else:
                                 markup_used = inline_markup is not None
                                 media = []
@@ -2142,7 +2155,6 @@ class ConfettiTelegramBot:
             [InlineKeyboardButton(program["label"], callback_data=f"about:{index}")]
             for index, program in enumerate(self.PROGRAMS)
         ]
-        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="about:home")])
         return InlineKeyboardMarkup(buttons)
 
     def _teacher_inline_keyboard(self) -> "InlineKeyboardMarkup":
@@ -2150,7 +2162,6 @@ class ConfettiTelegramBot:
             [InlineKeyboardButton(teacher["name"], callback_data=f"teacher:{teacher['key']}")]
             for teacher in self.TEACHERS
         ]
-        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="teacher:home")])
         return InlineKeyboardMarkup(buttons)
 
     def _format_program_details(self, program: Dict[str, str]) -> str:
@@ -3898,11 +3909,6 @@ class ConfettiTelegramBot:
             await query.answer("Не удалось открыть профиль.", show_alert=True)
             return
         key = data[1]
-        if key == "home":
-            await query.answer()
-            await self._send_teachers(update, context)
-            return
-
         teacher = next((item for item in self.TEACHERS if item["key"] == key), None)
         if teacher is None:
             await query.answer("Педагог не найден.", show_alert=True)
@@ -3953,11 +3959,6 @@ class ConfettiTelegramBot:
             return
 
         key = data[1]
-        if key == "home":
-            await query.answer()
-            await self._send_about(update, context)
-            return
-
         try:
             index = int(key)
         except ValueError:
