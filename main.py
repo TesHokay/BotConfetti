@@ -326,6 +326,10 @@ class ConfettiTelegramBot:
     CANCELLATION_PROGRAM = 21
     CANCELLATION_REASON = 22
 
+    PAYMENT_REPORT_PROGRAM = 41
+    PAYMENT_REPORT_NAME = 42
+    PAYMENT_REPORT_MEDIA = 43
+
     MAIN_MENU_BUTTON = "⬅️ Главное меню"
     REGISTRATION_BUTTON = "📝 Запись"
     CANCELLATION_BUTTON = "❗️ Отменить занятие"
@@ -334,7 +338,7 @@ class ConfettiTelegramBot:
     REGISTRATION_KEEP_TIME_BUTTON = "🔁 То же время"
     REGISTRATION_NEW_TIME_BUTTON = "⏰ Другое время"
     BACK_BUTTON = "◀️ Назад"
-    REGISTRATION_LIST_BUTTON = "📋 Список записей"
+    PAYMENT_REPORT_BUTTON = "💳 Сообщить об оплате"
     ADMIN_MENU_BUTTON = "🛠 Админ-панель"
     ADMIN_BACK_TO_USER_BUTTON = "⬅️ Пользовательское меню"
     ADMIN_BROADCAST_BUTTON = "📣 Рассылка"
@@ -349,74 +353,53 @@ class ConfettiTelegramBot:
     ADMIN_CANCEL_KEYWORDS = ("отмена", "annuler", "cancel")
     ADMIN_CANCEL_PROMPT = f"\n\nЧтобы отменить, нажмите «{BACK_BUTTON}» или напишите «Отмена»."
 
-    EXPORT_COLUMN_WIDTHS = (
+    REGISTRATION_EXPORT_COLUMN_WIDTHS = (
         20,
         36,
         30,
         22,
         18,
         26,
+        24,
+    )
+
+    PAYMENT_EXPORT_COLUMN_WIDTHS = (
+        20,
+        36,
+        30,
         36,
         24,
     )
 
+    PAYMENTS_SPREADSHEET_ENV = "CONFETTI_PAYMENTS_SHEETS_ID"
+    DEFAULT_PAYMENTS_SPREADSHEET_ID = "1dPD-mvtncpl0Fn2VYBE2VPSHZESk9NGJxfGNUljHOr0"
+
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание"),
         ("ℹ️ О студии", "👩‍🏫 Преподаватели"),
-        (REGISTRATION_LIST_BUTTON, "📞 Контакты"),
+        (PAYMENT_REPORT_BUTTON, "📞 Контакты"),
         ("📚 Полезные слова", CANCELLATION_BUTTON),
-    )
-
-    TIME_OF_DAY_OPTIONS = (
-        "☀️ Утро (10:00 - 12:00)",
-        "🌤 День (14:00 – 16:00)",
-        "🌙 Вечер (18:00 – 20:00)",
     )
 
     PROGRAMS = (
         {
-            "label": "📚 Французский каждый день",
+            "label": "📚 Веселый французский",
             "audience": "С 3 по 11 класс",
-            "teacher": "Преподаватель: Настыч Ксения Викторовна",
-            "schedule": "Дни занятий: вторник или четверг вечером",
             "description": (
-                "Интенсивная языковая практика в будни. Ученики погружаются "
+                "Интенсивная языковая практика. Ученики погружаются "
                 "в язык через общение, игры и проекты, закрепляя школьную программу "
                 "и расширяя словарный запас."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/kazd.png",
         },
         {
-            "label": "🎭 Театр на французском (вечер)",
-            "teacher": "Преподаватель: Настыч Ксения Викторовна",
-            "schedule": "Дни занятий: вторник или четверг вечером",
+            "label": "🎭 Театр на французском",
             "description": (
                 "Театральная студия для тех, кто любит сцену и французский язык. "
                 "Готовим постановки, работаем над произношением и учимся импровизировать "
                 "на французском."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/photo_2025-09-29_16-01-53(1).jpg",
-        },
-        {
-            "label": "📚 Воскресный французский",
-            "audience": "1–4 класс",
-            "teacher": "Преподаватель: Банникова Анастасия Дмитриевна",
-            "schedule": "Дни занятий: воскресенье",
-            "description": (
-                "Уютные воскресные встречи для младших школьников. Развиваем речь "
-                "через творчество, песни и игры, знакомимся с французскими традициями."
-            ),
-            "photo_url": "https://storage.yandexcloud.net/bigbob/voskr.png",
-        },
-        {
-            "label": "🎭 Театр на французском (воскресенье)",
-            "teacher": "Преподаватель: Банникова Анастасия Дмитриевна",
-            "schedule": "Дни занятий: воскресенье",
-            "description": (
-                "Театральная студия выходного дня: работа с текстами, пластикой и "
-                "эмоциями на французском языке, совместные выступления и фестивали."
-            ),
-            "photo_url": "https://storage.yandexcloud.net/bigbob/teatr(1).jpg",
         },
         {
             "label": "🇫🇷 Французский по-взрослому",
@@ -432,24 +415,46 @@ class ConfettiTelegramBot:
         {
             "label": "👩🏼‍🏫 Индивидуальные занятия",
             "audience": "Французский, английский и корейский языки",
-            "teacher": "Преподаватели: команда студии и Ксения Вшивкова",
             "schedule": "График подбирается персонально",
             "description": (
                 "Персональные уроки под ваши цели: подготовка к экзаменам, "
-                "разговорная практика или помощь по школе. Ксения Вшивкова ведёт "
-                "индивидуальные занятия по французскому, английскому и корейскому языкам."
+                "разговорная практика или помощь по школе."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/indidvid.png",
         },
         {
-            "label": "🍂 Осенний интенсив",
+            "label": "🍂 Интенсивы в каникулы",
             "audience": "Краткосрочная программа",
             "schedule": "Сезонные смены, даты объявляются дополнительно",
             "description": (
-                "Погружение в язык на время каникул: тематические мастер-классы, "
-                "театральные проекты и квесты на французском."
+                "Погружение в язык на время каникул: отличная возможность повторить "
+                "важные темы и сделать большой шаг в изучении французского. Занятия каждый "
+                "день по 60 минут оффлайн и онлайн в мини группах и стандартных группах. "
+                "Программа построена в соответствии со школьной."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/osen.png",
+        },
+        {
+            "label": "🇰🇷 Корейский для подростков",
+            "audience": "Краткосрочная программа",
+            "schedule": "Сезонные смены, даты объявляются дополнительно",
+            "description": (
+                "Данный курс - это увлекательное путешествие в мир языка и культуры "
+                "K-pop, сериалов и современных трендов. Ребята учатся говорить, писать "
+                "и понимать живой корейский в дружеской атмосфере."
+            ),
+            "photo_url": "https://storage.yandexcloud.net/bigbob/20251013_1759_%D0%92%D0%B5%D1%81%D1%91%D0%BB%D0%B0%D1%8F%20%D1%8F%D0%B7%D1%8B%D0%BA%D0%BE%D0%B2%D0%B0%D1%8F%20%D1%88%D0%BA%D0%BE%D0%BB%D0%B0_simple_compose_01k7etc95tfker7vx0btdsps6m.png",
+        },
+        {
+            "label": "🗣️ Языковой клуб",
+            "audience": "Краткосрочная программа",
+            "schedule": "Сезонные смены, даты объявляются дополнительно",
+            "description": (
+                "Языковой клуб — это живое общение с носителем на актуальные темы. "
+                "Практикуем разговорную речь, учимся выражать мнение и обсуждать всё, "
+                "что действительно интересно."
+            ),
+            "photo_url": "https://storage.yandexcloud.net/bigbob/20251002_1805_%D0%A3%D1%80%D0%BE%D0%BA%D0%B8%20%D1%84%D1%80%D0%B0%D0%BD%D1%86%D1%83%D0%B7%D1%81%D0%BA%D0%BE%D0%B3%D0%BE%20%D1%8F%D0%B7%D1%8B%D0%BA%D0%B0_simple_compose_01k6jgb8aqet48evvgkw40f90a.png",
         },
     )
 
@@ -566,6 +571,11 @@ class ConfettiTelegramBot:
         return application
 
     def __post_init__(self) -> None:
+        if not isinstance(self.token, str):
+            potential_admins = self.token
+            if not self.admin_chat_ids:
+                self.admin_chat_ids = potential_admins  # type: ignore[assignment]
+            self.token = ""
         normalised = _normalise_admin_chat_ids(self.admin_chat_ids)
         self.admin_chat_ids = normalised
         self._runtime_admin_ids: set[int] = set(normalised)
@@ -574,15 +584,17 @@ class ConfettiTelegramBot:
         self.storage_path = storage_path.expanduser()
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self._known_registration_ids: set[str] = set()
+        self._known_payment_ids: set[str] = set()
         self._persistent_store: dict[str, Any] = self._load_persistent_state()
         self._ensure_registration_ids()
+        self._ensure_payment_ids()
         dynamic_admins = self._persistent_store.get("dynamic_admins")
         if isinstance(dynamic_admins, set):
             self._runtime_admin_ids.update(dynamic_admins)
         self._storage_dirty = False
         self._bot_username: Optional[str] = None
-        self._google_sheets_exporter = _GoogleSheetsExporter.from_env()
-        self._last_google_sheet_url: Optional[str] = None
+        self._google_sheets_exporters: dict[str, Optional[_GoogleSheetsExporter]] = {}
+        self._last_google_sheet_urls: dict[str, Optional[str]] = {}
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -608,11 +620,59 @@ class ConfettiTelegramBot:
         if dirty:
             self._save_persistent_state()
 
+    def _ensure_payment_ids(self) -> None:
+        payments = self._persistent_store.get("payments")
+        if not isinstance(payments, list):
+            self._persistent_store["payments"] = []
+            return
+
+        dirty = False
+        for entry in payments:
+            if not isinstance(entry, dict):
+                continue
+            record_id = entry.get("id")
+            if record_id:
+                record_id_str = str(record_id)
+            else:
+                record_id_str = self._generate_payment_id()
+                entry["id"] = record_id_str
+                dirty = True
+            self._known_payment_ids.add(record_id_str)
+            attachments = entry.get("attachments")
+            cleaned: list[dict[str, str]] = []
+            if isinstance(attachments, list):
+                for item in attachments:
+                    if not isinstance(item, dict):
+                        continue
+                    kind = item.get("kind")
+                    file_id = item.get("file_id")
+                    if not kind or not file_id:
+                        continue
+                    cleaned.append(
+                        {
+                            "kind": str(kind),
+                            "file_id": str(file_id),
+                            "caption": str(item.get("caption", "")),
+                            "preview_base64": str(item.get("preview_base64", "")),
+                            "preview_mime": str(item.get("preview_mime", "")),
+                        }
+                    )
+            entry["attachments"] = cleaned
+        if dirty:
+            self._save_persistent_state()
+
     def _generate_registration_id(self) -> str:
         while True:
             candidate = datetime.utcnow().strftime("%Y%m%d%H%M%S") + f"-{random.randint(1000, 9999)}"
             if candidate not in self._known_registration_ids:
                 self._known_registration_ids.add(candidate)
+                return candidate
+
+    def _generate_payment_id(self) -> str:
+        while True:
+            candidate = "PAY-" + datetime.utcnow().strftime("%Y%m%d%H%M%S") + f"-{random.randint(1000, 9999)}"
+            if candidate not in self._known_payment_ids:
+                self._known_payment_ids.add(candidate)
                 return candidate
 
     def _load_persistent_state(self) -> dict[str, Any]:
@@ -644,6 +704,45 @@ class ConfettiTelegramBot:
             data["registrations"] = filtered
         else:
             data["registrations"] = []
+
+        payments_raw = data.get("payments")
+        payments: list[dict[str, Any]] = []
+        if isinstance(payments_raw, list):
+            for item in payments_raw:
+                if not isinstance(item, dict):
+                    continue
+                attachments_payload = item.get("attachments")
+                attachments: list[dict[str, str]] = []
+                if isinstance(attachments_payload, list):
+                    for entry in attachments_payload:
+                        if not isinstance(entry, dict):
+                            continue
+                        kind = entry.get("kind")
+                        file_id = entry.get("file_id")
+                        if not kind or not file_id:
+                            continue
+                        attachments.append(
+                            {
+                                "kind": str(kind),
+                                "file_id": str(file_id),
+                                "caption": str(entry.get("caption", "")),
+                                "preview_base64": str(entry.get("preview_base64", "")),
+                                "preview_mime": str(entry.get("preview_mime", "")),
+                            }
+                        )
+                payments.append(
+                    {
+                        "id": str(item.get("id", "")),
+                        "program": str(item.get("program", "")),
+                        "full_name": str(item.get("full_name", "")),
+                        "chat_id": item.get("chat_id"),
+                        "submitted_by": str(item.get("submitted_by", "")),
+                        "submitted_by_id": item.get("submitted_by_id"),
+                        "created_at": str(item.get("created_at", "")),
+                        "attachments": attachments,
+                    }
+                )
+        data["payments"] = payments
 
         cancellations = data.get("cancellations")
         if not isinstance(cancellations, list):
@@ -1012,10 +1111,26 @@ class ConfettiTelegramBot:
     def build_profile(self, chat: Any, user: Any | None = None) -> "UserProfile":
         """Return the appropriate profile for ``chat`` and optional ``user``."""
 
+        if isinstance(chat, Update):
+            update_obj = chat
+            chat = update_obj.effective_chat
+            if user is None:
+                user = update_obj.effective_user
+
         chat_id = _coerce_chat_id_from_object(chat)
-        if self._is_admin_identity(chat=chat, user=user):
-            return AdminProfile(chat_id=chat_id)
-        return UserProfile(chat_id=chat_id)
+        is_admin = self._is_admin_identity(chat=chat, user=user)
+        keyboard = self._admin_keyboard() if is_admin else self._user_keyboard()
+        if is_admin:
+            return AdminProfile(chat_id=chat_id, keyboard=keyboard)
+        return UserProfile(chat_id=chat_id, keyboard=keyboard)
+
+    def _user_keyboard(self) -> list[list[str]]:
+        return [list(row) for row in self.MAIN_MENU_LAYOUT]
+
+    def _admin_keyboard(self) -> list[list[str]]:
+        keyboard = self._user_keyboard()
+        keyboard.append([self.ADMIN_MENU_BUTTON])
+        return keyboard
 
     def is_admin_chat(self, chat: Any) -> bool:
         """Return ``True`` when ``chat`` belongs to an administrator."""
@@ -1026,6 +1141,11 @@ class ConfettiTelegramBot:
         """Return ``True`` when ``user`` is recognised as an administrator."""
 
         return self._is_admin_identity(user=user)
+
+    def broadcast_to_admins(self, update: Optional[Update] = None) -> set[int]:
+        """Return the set of administrator chat ids for broadcast helpers."""
+
+        return set(self._runtime_admin_ids)
 
     def _build_rate_limiter(self) -> Optional[AIORateLimiter]:  # type: ignore[name-defined]
         """Return an ``AIORateLimiter`` instance when possible."""
@@ -1173,6 +1293,67 @@ class ConfettiTelegramBot:
         with warnings.catch_warnings():
             if PTBUserWarning is not None:
                 warnings.simplefilter("ignore", PTBUserWarning)
+            payment_report = ConversationHandler(
+                entry_points=[
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.PAYMENT_REPORT_BUTTON)),
+                        self._start_payment_report,
+                    )
+                ],
+                states={
+                self.PAYMENT_REPORT_PROGRAM: [
+                    CallbackQueryHandler(
+                        self._payment_report_collect_program,
+                        pattern=r"^pay_program:\d+$",
+                    ),
+                    CallbackQueryHandler(
+                        self._payment_report_cancel_from_program,
+                        pattern=r"^pay_back:menu$",
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._payment_report_prompt_program,
+                    ),
+                ],
+                self.PAYMENT_REPORT_NAME: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._payment_report_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._payment_report_back_to_program,
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._payment_report_collect_name,
+                    ),
+                ],
+                self.PAYMENT_REPORT_MEDIA: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._payment_report_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._payment_report_back_to_name,
+                    ),
+                    MessageHandler(~filters.COMMAND, self._payment_report_collect_media),
+                ],
+                },
+                fallbacks=[
+                    CommandHandler("cancel", self._payment_report_cancel),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._payment_report_cancel,
+                    ),
+                ],
+                allow_reentry=True,
+            )
+
+        with warnings.catch_warnings():
+            if PTBUserWarning is not None:
+                warnings.simplefilter("ignore", PTBUserWarning)
             cancellation = ConversationHandler(
                 entry_points=[
                     MessageHandler(
@@ -1209,6 +1390,7 @@ class ConfettiTelegramBot:
         application.add_handler(CommandHandler("menu", self._show_main_menu))
         application.add_handler(CommandHandler("admin", self._show_admin_menu))
         application.add_handler(conversation)
+        application.add_handler(payment_report)
         application.add_handler(cancellation)
         application.add_handler(CallbackQueryHandler(self._about_show_direction, pattern=r"^about:"))
         application.add_handler(CallbackQueryHandler(self._teacher_show_profile, pattern=r"^teacher:"))
@@ -1456,6 +1638,36 @@ class ConfettiTelegramBot:
 
         return record
 
+    def _store_payment_report(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        data: dict[str, Any],
+        attachments: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        chat = update.effective_chat
+        user = update.effective_user
+        record_id = self._generate_payment_id()
+        record = {
+            "id": record_id,
+            "program": data.get("program", ""),
+            "full_name": data.get("full_name", ""),
+            "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
+            "submitted_by": getattr(user, "full_name", None) or "",
+            "submitted_by_id": getattr(user, "id", None),
+            "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "attachments": attachments,
+        }
+
+        payments = self._application_data(context).setdefault("payments", [])
+        if isinstance(payments, list):
+            payments.append(record)
+        else:
+            self._application_data(context)["payments"] = [record]
+
+        self._save_persistent_state()
+        return record
+
     def _find_registration_by_id(
         self, context: ContextTypes.DEFAULT_TYPE, registration_id: str
     ) -> Optional[dict[str, Any]]:
@@ -1466,6 +1678,22 @@ class ConfettiTelegramBot:
         if not target:
             return None
         for record in registrations:
+            if not isinstance(record, dict):
+                continue
+            if str(record.get("id")) == target:
+                return record
+        return None
+
+    def _find_payment_report_by_id(
+        self, context: ContextTypes.DEFAULT_TYPE, payment_id: str
+    ) -> Optional[dict[str, Any]]:
+        payments = self._application_data(context).get("payments")
+        if not isinstance(payments, list):
+            return None
+        target = payment_id.strip()
+        if not target:
+            return None
+        for record in payments:
             if not isinstance(record, dict):
                 continue
             if str(record.get("id")) == target:
@@ -1663,6 +1891,14 @@ class ConfettiTelegramBot:
                     remainder
                 )
                 handled = await self._send_registration_payment_media(
+                    update,
+                    context,
+                    registration_id,
+                    attachment_index=attachment_index,
+                )
+                if handled:
+                    return
+                handled = await self._send_payment_report_media(
                     update,
                     context,
                     registration_id,
@@ -2612,6 +2848,228 @@ class ConfettiTelegramBot:
         await self._show_main_menu(update, context)
         return ConversationHandler.END
 
+    # ------------------------------------------------------------------
+    # Payment report conversation
+
+    def _payment_report_intro(self) -> str:
+        return (
+            "Выберите направление, за которое хотите сообщить об оплате.\n"
+            "Нажмите на кнопку ниже, чтобы выбрать программу."
+        )
+
+    def _payment_program_keyboard(self) -> "InlineKeyboardMarkup":
+        buttons = [
+            [InlineKeyboardButton(program["label"], callback_data=f"pay_program:{index}")]
+            for index, program in enumerate(self.PROGRAMS)
+        ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="pay_back:menu")])
+        return InlineKeyboardMarkup(buttons)
+
+    async def _start_payment_report(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        self._remember_chat(update, context)
+        context.user_data["payment_report"] = {}
+        await self._reply(
+            update,
+            self._payment_report_intro(),
+            reply_markup=self._payment_program_keyboard(),
+        )
+        return self.PAYMENT_REPORT_PROGRAM
+
+    async def _payment_report_prompt_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        await self._reply(
+            update,
+            self._payment_report_intro(),
+            reply_markup=self._payment_program_keyboard(),
+            prefer_edit=update.callback_query is not None,
+        )
+        return self.PAYMENT_REPORT_PROGRAM
+
+    async def _payment_report_collect_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        query = update.callback_query
+        if query is None:
+            return await self._payment_report_prompt_program(update, context)
+
+        data = query.data or ""
+        try:
+            index = int(data.split(":", 1)[1])
+        except (IndexError, ValueError):
+            await query.answer("Не удалось определить направление.", show_alert=True)
+            return self.PAYMENT_REPORT_PROGRAM
+
+        if not 0 <= index < len(self.PROGRAMS):
+            await query.answer("Направление недоступно.", show_alert=True)
+            return self.PAYMENT_REPORT_PROGRAM
+
+        program = self.PROGRAMS[index]
+        await query.answer()
+        details = self._format_program_details(program)
+        try:  # pragma: no cover - depends on telegram runtime
+            await query.edit_message_text(f"Вы выбрали направление:\n{details}")
+        except Exception:
+            try:
+                await query.edit_message_reply_markup(None)
+            except Exception:
+                pass
+            await self._reply(update, f"Вы выбрали направление:\n{details}")
+
+        context.user_data.setdefault("payment_report", {})["program"] = program["label"]
+        return await self._payment_report_prompt_name(update, context)
+
+    async def _payment_report_cancel_from_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        query = update.callback_query
+        if query is not None:
+            await query.answer()
+        await self._payment_report_cancel(update, context)
+        return ConversationHandler.END
+
+    async def _payment_report_prompt_name(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        remind: bool = False,
+    ) -> int:
+        data = context.user_data.setdefault("payment_report", {})
+        program = data.get("program", "направление")
+        if remind and data.get("full_name"):
+            message = (
+                f"Сейчас указано имя: {data.get('full_name', '—')}.\n"
+                "Введите фамилию и имя плательщика ещё раз."
+            )
+        else:
+            message = (
+                f"Вы выбрали: {program}.\n"
+                "Напишите, пожалуйста, фамилию и имя плательщика."
+            )
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.PAYMENT_REPORT_NAME
+
+    async def _payment_report_collect_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._payment_report_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._payment_report_back_to_program(update, context)
+        if not text:
+            await self._reply(
+                update,
+                "Пожалуйста, укажите фамилию и имя плательщика.",
+                reply_markup=self._back_keyboard(),
+            )
+            return self.PAYMENT_REPORT_NAME
+        context.user_data.setdefault("payment_report", {})["full_name"] = text
+        return await self._payment_report_prompt_media(update, context)
+
+    async def _payment_report_back_to_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        context.user_data.setdefault("payment_report", {}).pop("program", None)
+        return await self._payment_report_prompt_program(update, context)
+
+    async def _payment_report_prompt_media(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        message = (
+            "Загрузите фото или скан подтверждения оплаты.\n\n"
+            "Можно прикрепить несколько изображений, если нужно."
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._payment_keyboard(),
+        )
+        return self.PAYMENT_REPORT_MEDIA
+
+    async def _payment_report_back_to_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        context.user_data.setdefault("payment_report", {}).pop("attachments", None)
+        return await self._payment_report_prompt_name(update, context, remind=True)
+
+    async def _payment_report_collect_media(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("payment_report", {})
+        text, attachments = self._extract_message_payload(update.message)
+
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._payment_report_cancel(update, context)
+
+        if text == self.BACK_BUTTON:
+            return await self._payment_report_back_to_name(update, context)
+
+        if not attachments:
+            await self._reply(
+                update,
+                "Пожалуйста, прикрепите фото подтверждения оплаты.",
+                reply_markup=self._payment_keyboard(),
+            )
+            return self.PAYMENT_REPORT_MEDIA
+
+        if not any(item.kind == "photo" for item in attachments):
+            await self._reply(
+                update,
+                "Нужно отправить хотя бы одну фотографию чека или квитанции.",
+                reply_markup=self._payment_keyboard(),
+            )
+            return self.PAYMENT_REPORT_MEDIA
+
+        serialised = await self._serialise_payment_media(context, attachments)
+        data["attachments"] = serialised
+        await self._complete_payment_report(update, context, attachments)
+        return ConversationHandler.END
+
+    async def _payment_report_cancel(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        context.user_data.pop("payment_report", None)
+        await self._reply(
+            update,
+            "Сообщение об оплате отменено.",
+            reply_markup=self._main_menu_markup_for(update, context),
+        )
+        return ConversationHandler.END
+
+    async def _complete_payment_report(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        attachments: list[MediaAttachment],
+    ) -> None:
+        data = context.user_data.setdefault("payment_report", {})
+        stored = self._store_payment_report(update, context, data, data.get("attachments", []))
+        confirmation = (
+            "Спасибо! Мы зафиксировали подтверждение оплаты.\n\n"
+            f"📚 Направление: {stored.get('program', '—')}\n"
+            f"👤 Плательщик: {stored.get('full_name', '—')}\n"
+            f"🕒 Отправлено: {stored.get('created_at', '—')}"
+        )
+        await self._reply(
+            update,
+            confirmation,
+            reply_markup=self._main_menu_markup_for(update, context),
+        )
+        admin_message = (
+            "💳 Новое подтверждение оплаты\n"
+            f"📚 Направление: {stored.get('program', '—')}\n"
+            f"👤 Плательщик: {stored.get('full_name', '—')}\n"
+            f"🕒 Отправлено: {stored.get('created_at', '—')}\n"
+            f"👤 Отправил: {stored.get('submitted_by', '—')}"
+        )
+        await self._notify_admins(context, admin_message, media=attachments or None)
+        context.user_data.pop("payment_report", None)
+        await self._show_main_menu(update, context)
+
     async def _registration_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data.pop("registration", None)
         await self._reply(
@@ -3225,11 +3683,22 @@ class ConfettiTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         await self._purge_expired_registrations(context)
-        registrations = self._application_data(context).get("registrations", [])
-        if not isinstance(registrations, list) or not registrations:
+        registrations_data = self._application_data(context).get("registrations", [])
+        if not isinstance(registrations_data, list):
+            registrations = []
+        else:
+            registrations = [item for item in registrations_data if isinstance(item, dict)]
+
+        payments_data = self._application_data(context).get("payments", [])
+        if not isinstance(payments_data, list):
+            payments = []
+        else:
+            payments = [item for item in payments_data if isinstance(item, dict)]
+
+        if not registrations and not payments:
             await self._reply(
                 update,
-                "Заявок пока нет.",
+                "Заявок и сообщений об оплате пока нет.",
                 reply_markup=self._admin_menu_markup(),
             )
             return
@@ -3240,24 +3709,43 @@ class ConfettiTelegramBot:
             registrations,
             bot_username=bot_username,
         )
-        export_path, generated_at = self._export_registrations_excel(
+        _export_path, generated_at = self._export_registrations_excel(
             context,
             table_rows,
         )
-        sheet_result = await self._sync_google_sheet(table_rows)
+        sheet_result = await self._sync_google_sheet(
+            table_rows,
+            kind="registrations",
+            column_widths=self.REGISTRATION_EXPORT_COLUMN_WIDTHS,
+        )
+        payment_rows = self._build_payment_report_table_rows(
+            payments,
+            bot_username=bot_username,
+        )
+        _payments_export_path, payments_generated_at = self._export_payments_excel(
+            context,
+            payment_rows,
+        )
+        payments_sheet_result = await self._sync_google_sheet(
+            payment_rows,
+            kind="payments",
+            column_widths=self.PAYMENT_EXPORT_COLUMN_WIDTHS,
+            spreadsheet_env=self.PAYMENTS_SPREADSHEET_ENV,
+            default_spreadsheet_id=self.DEFAULT_PAYMENTS_SPREADSHEET_ID,
+        )
         preview_lines = self._format_registrations_preview(registrations)
 
         message_parts = [
-            "📊 Экспорт заявок готов!\n",
-            f"🗂 Всего записей: {len(registrations)}",
-            f"🕒 Обновлено: {generated_at}",
+            "📊 Экспорт данных готов!\n",
+            f"🗂 Заявок: {len(registrations)} (обновлено {generated_at})",
+            f"💳 Сообщений об оплате: {len(payments)} (обновлено {payments_generated_at})",
         ]
         if preview_lines:
             message_parts.append("")
             message_parts.extend(preview_lines)
         if sheet_result.url:
             message_parts.append("")
-            message_parts.append(f"🌐 Живая таблица: {sheet_result.url}")
+            message_parts.append(f"🌐 Таблица заявок: {sheet_result.url}")
             if sheet_result.updated:
                 message_parts.append(
                     "Таблица обновлена автоматически и содержит актуальные данные."
@@ -3271,10 +3759,22 @@ class ConfettiTelegramBot:
             message_parts.append(
                 "⚠️ Облачная таблица недоступна: проверьте настройки сервисного аккаунта."
             )
-        message_parts.append("")
-        message_parts.append(
-            "🔗 В столбце «Фото оплаты» размещены кликабельные ссылки на подтверждения платежей."
-        )
+        if payments_sheet_result.url:
+            message_parts.append("")
+            message_parts.append(f"💳 Таблица оплат: {payments_sheet_result.url}")
+            if payments_sheet_result.updated:
+                message_parts.append(
+                    "Таблица оплат обновлена автоматически."
+                )
+            else:
+                message_parts.append(
+                    "⚠️ Не удалось обновить таблицу оплат автоматически."
+                )
+        else:
+            message_parts.append("")
+            message_parts.append(
+                "⚠️ Облачная таблица оплат недоступна: проверьте настройки сервисного аккаунта."
+            )
 
         await self._reply(
             update,
@@ -3295,7 +3795,6 @@ class ConfettiTelegramBot:
             "Класс / возраст",
             "Телефон",
             "Предпочтительное время",
-            "Фото оплаты",
             "Отправитель",
         )
 
@@ -3311,16 +3810,6 @@ class ConfettiTelegramBot:
         ]
 
         for record in registrations:
-            payment_entries = self._dicts_to_attachments(record.get("payment_media"))
-            payment_note = record.get("payment_note") or ""
-            registration_id = str(record.get("id") or "")
-            photo_cell = self._build_payment_link_cell(
-                bot_username=bot_username,
-                registration_id=registration_id,
-                attachments=payment_entries,
-                payment_note=payment_note,
-            )
-
             rows.append(
                 [
                     make_cell(record.get("created_at") or ""),
@@ -3329,7 +3818,51 @@ class ConfettiTelegramBot:
                     make_cell(record.get("class") or ""),
                     make_cell(record.get("phone") or ""),
                     make_cell(record.get("time") or ""),
-                    make_cell(photo_cell),
+                    make_cell(record.get("submitted_by") or ""),
+                ]
+            )
+
+        return rows
+
+    def _build_payment_report_table_rows(
+        self,
+        payments: list[dict[str, Any]],
+        *,
+        bot_username: Optional[str],
+    ) -> list[list[_XlsxCell]]:
+        header = (
+            "Дата сообщения",
+            "Направление",
+            "Плательщик",
+            "Фото оплаты",
+            "Отправитель",
+        )
+
+        def make_cell(value: Any) -> _XlsxCell:
+            if isinstance(value, _XlsxCell):
+                return value
+            if value is None:
+                return _XlsxCell("")
+            return _XlsxCell(str(value))
+
+        rows: list[list[_XlsxCell]] = [[make_cell(title) for title in header]]
+
+        for record in payments:
+            attachments = self._dicts_to_attachments(record.get("attachments"))
+            payment_id = str(record.get("id") or "")
+            link_cell = self._build_payment_link_cell(
+                bot_username=bot_username,
+                registration_id=payment_id,
+                attachments=attachments,
+                payment_note="",
+            )
+
+            rows.append(
+                [
+                    make_cell(record.get("created_at") or ""),
+                    make_cell(record.get("program") or ""),
+                    make_cell(record.get("full_name") or ""),
+                    make_cell(link_cell),
                     make_cell(record.get("submitted_by") or ""),
                 ]
             )
@@ -3343,7 +3876,7 @@ class ConfettiTelegramBot:
     ) -> tuple[Path, str]:
         builder = _SimpleXlsxBuilder(
             sheet_name="Заявки",
-            column_widths=self.EXPORT_COLUMN_WIDTHS,
+            column_widths=self.REGISTRATION_EXPORT_COLUMN_WIDTHS,
         )
 
         for row in table_rows:
@@ -3368,18 +3901,72 @@ class ConfettiTelegramBot:
 
         return export_path, generated_at
 
-    def _ensure_google_sheets_exporter(self) -> Optional["_GoogleSheetsExporter"]:
-        if self._google_sheets_exporter is not None:
-            return self._google_sheets_exporter
-        exporter = _GoogleSheetsExporter.from_env()
-        self._google_sheets_exporter = exporter
+    def _export_payments_excel(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        table_rows: Sequence[Sequence[_XlsxCell]],
+    ) -> tuple[Path, str]:
+        builder = _SimpleXlsxBuilder(
+            sheet_name="Оплаты",
+            column_widths=self.PAYMENT_EXPORT_COLUMN_WIDTHS,
+        )
+
+        for row in table_rows:
+            builder.add_row(row)
+
+        generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        export_path = Path("data") / "exports" / "confetti_payments.xlsx"
+        builder.to_file(export_path)
+
+        storage = self._application_data(context)
+        exports_meta = storage.setdefault("exports", {})
+        payments_meta = {
+            "generated_at": generated_at,
+            "path": str(export_path),
+        }
+        if isinstance(exports_meta, dict):
+            exports_meta["payments"] = payments_meta
+        else:
+            storage["exports"] = {"payments": payments_meta}
+
+        self._save_persistent_state()
+
+        return export_path, generated_at
+
+    def _ensure_google_sheets_exporter(
+        self,
+        *,
+        kind: str,
+        spreadsheet_id: Optional[str] = None,
+        spreadsheet_env: str = "CONFETTI_GOOGLE_SHEETS_ID",
+        default_spreadsheet_id: Optional[str] = None,
+    ) -> Optional["_GoogleSheetsExporter"]:
+        if kind in self._google_sheets_exporters:
+            return self._google_sheets_exporters[kind]
+        exporter = _GoogleSheetsExporter.from_env(
+            spreadsheet_id=spreadsheet_id,
+            spreadsheet_env=spreadsheet_env,
+            default_spreadsheet_id=default_spreadsheet_id,
+        )
+        self._google_sheets_exporters[kind] = exporter
         return exporter
 
     async def _sync_google_sheet(
         self,
         table_rows: Sequence[Sequence[_XlsxCell]],
+        *,
+        kind: str,
+        column_widths: Sequence[float],
+        spreadsheet_id: Optional[str] = None,
+        spreadsheet_env: str = "CONFETTI_GOOGLE_SHEETS_ID",
+        default_spreadsheet_id: Optional[str] = None,
     ) -> _GoogleSheetSyncResult:
-        exporter = self._ensure_google_sheets_exporter()
+        exporter = self._ensure_google_sheets_exporter(
+            kind=kind,
+            spreadsheet_id=spreadsheet_id,
+            spreadsheet_env=spreadsheet_env,
+            default_spreadsheet_id=default_spreadsheet_id,
+        )
         if exporter is None:
             return _GoogleSheetSyncResult(url=None, updated=False)
 
@@ -3389,25 +3976,25 @@ class ConfettiTelegramBot:
                 None,
                 exporter.sync,
                 table_rows,
-                tuple(self.EXPORT_COLUMN_WIDTHS),
+                tuple(column_widths),
             )
         except Exception as exc:  # pragma: no cover - network dependent
             LOGGER.warning("Не удалось обновить Google Sheets: %s", exc)
-            fallback_url = self._last_google_sheet_url or exporter.url
+            fallback_url = self._last_google_sheet_urls.get(kind) or exporter.url
             if fallback_url:
-                self._last_google_sheet_url = fallback_url
+                self._last_google_sheet_urls[kind] = fallback_url
             return _GoogleSheetSyncResult(url=fallback_url, updated=False, error=str(exc))
 
         if url:
-            self._last_google_sheet_url = url
+            self._last_google_sheet_urls[kind] = url
             return _GoogleSheetSyncResult(url=url, updated=True)
 
-        if self._last_google_sheet_url:
-            return _GoogleSheetSyncResult(url=self._last_google_sheet_url, updated=True)
+        if self._last_google_sheet_urls.get(kind):
+            return _GoogleSheetSyncResult(url=self._last_google_sheet_urls[kind], updated=True)
 
         fallback_url = exporter.url
         if fallback_url:
-            self._last_google_sheet_url = fallback_url
+            self._last_google_sheet_urls[kind] = fallback_url
         return _GoogleSheetSyncResult(url=fallback_url, updated=True)
 
     def _build_payment_link_cell(
@@ -3624,6 +4211,80 @@ class ConfettiTelegramBot:
 
         return True
 
+    async def _send_payment_report_media(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        payment_id: str,
+        *,
+        attachment_index: Optional[int] = None,
+    ) -> bool:
+        record = self._find_payment_report_by_id(context, payment_id)
+        if record is None:
+            await self._reply(
+                update,
+                "Не удалось найти подтверждение оплаты с таким идентификатором.",
+                reply_markup=self._admin_menu_markup(),
+            )
+            return False
+
+        attachments = self._dicts_to_attachments(record.get("attachments"))
+        if not attachments:
+            await self._reply(
+                update,
+                "Для этой записи нет сохранённых вложений.",
+                reply_markup=self._admin_menu_markup(),
+            )
+            return False
+
+        selected_attachments = attachments
+        if attachment_index is not None:
+            if 0 <= attachment_index < len(attachments):
+                selected_attachments = [attachments[attachment_index]]
+            else:
+                await self._reply(
+                    update,
+                    "Не удалось найти вложение с указанным номером.",
+                    reply_markup=self._admin_menu_markup(),
+                )
+                return False
+
+        summary_lines = [
+            "💳 Подтверждение оплаты",
+            f"📚 Направление: {record.get('program', '—')}",
+            f"👤 Плательщик: {record.get('full_name', '—')}",
+            f"🕒 Отправлено: {record.get('created_at', '—')}",
+            f"📎 Файлов: {len(attachments)}",
+        ]
+
+        if attachment_index is not None and len(attachments) > 1:
+            summary_lines.append(
+                f"🔍 Показан файл {attachment_index + 1} из {len(attachments)}"
+            )
+
+        chat = update.effective_chat
+        try:
+            chat_id = _coerce_chat_id_from_object(chat) if chat else None
+        except ValueError:
+            chat_id = None
+
+        if chat_id is None:
+            return False
+
+        try:
+            await self._send_payload_to_chat(
+                context,
+                chat_id,
+                text="\n".join(summary_lines),
+                media=selected_attachments,
+                reply_markup=self._admin_menu_markup(),
+            )
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Не удалось отправить вложения подтверждения %s: %s", payment_id, exc)
+            return False
+
+        return True
+
     def _extract_media_directives(self, text: str) -> tuple[str, list[MediaAttachment]]:
         if not text.strip():
             return text.strip(), []
@@ -3748,7 +4409,6 @@ class ConfettiTelegramBot:
             "📅 Расписание": self._send_schedule,
             "ℹ️ О студии": self._send_about,
             "👩‍🏫 Преподаватели": self._send_teachers,
-            self.REGISTRATION_LIST_BUTTON: self._send_registration_list,
             "📞 Контакты": self._send_contacts,
             "📚 Полезные слова": self._send_vocabulary,
         }
@@ -4034,11 +4694,23 @@ class UserProfile:
     """Representation of a standard chat profile."""
 
     chat_id: int
+    keyboard: list[list[str]] = field(default_factory=list)
     role: str = field(init=False, default="user")
 
     @property
     def is_admin(self) -> bool:
         return False
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "chat_id":
+            return self.chat_id
+        if key == "keyboard":
+            return self.keyboard
+        if key == "is_admin":
+            return self.is_admin
+        if key == "role":
+            return self.role
+        raise KeyError(key)
 
 
 @dataclass(frozen=True)
@@ -4373,7 +5045,13 @@ class _GoogleSheetsExporter:
         return self._service_account_email
 
     @classmethod
-    def from_env(cls) -> Optional["_GoogleSheetsExporter"]:
+    def from_env(
+        cls,
+        *,
+        spreadsheet_id: Optional[str] = None,
+        spreadsheet_env: str = "CONFETTI_GOOGLE_SHEETS_ID",
+        default_spreadsheet_id: Optional[str] = None,
+    ) -> Optional["_GoogleSheetsExporter"]:
         if (
             GoogleServiceAccountCredentials is None
             or google_build is None
@@ -4463,11 +5141,15 @@ class _GoogleSheetsExporter:
             LOGGER.warning("Некорректные данные сервисного аккаунта: %s", exc)
             return None
 
-        spreadsheet_id = os.environ.get("CONFETTI_GOOGLE_SHEETS_ID")
         if spreadsheet_id:
             spreadsheet_id = spreadsheet_id.strip()
         if not spreadsheet_id:
-            spreadsheet_id = cls.DEFAULT_SPREADSHEET_ID
+            env_candidate = os.environ.get(spreadsheet_env)
+            if env_candidate:
+                env_candidate = env_candidate.strip()
+            spreadsheet_id = env_candidate
+        if not spreadsheet_id:
+            spreadsheet_id = default_spreadsheet_id or cls.DEFAULT_SPREADSHEET_ID
 
         return cls(
             spreadsheet_id,
