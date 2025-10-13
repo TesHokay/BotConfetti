@@ -746,6 +746,29 @@ class ConfettiTelegramBot:
         photo_url = str(item.get("photo_url", "") or "").strip()
         code = str(item.get("code", "") or "").strip()
 
+        variants_value = item.get("variants")
+        variants: list[dict[str, str]] = []
+        if isinstance(variants_value, list):
+            for option in variants_value:
+                if not isinstance(option, dict):
+                    continue
+                button = str(
+                    option.get("button")
+                    or option.get("label")
+                    or option.get("title")
+                    or ""
+                ).strip()
+                stored_raw = option.get("stored") or option.get("value")
+                stored = str(stored_raw or button).strip()
+                if not button:
+                    continue
+                variants.append({"button": button, "stored": stored or button})
+        if not variants and (code == "french" or title == self.FRENCH_PROGRAM_LABEL):
+            variants = [
+                {"button": option["button"], "stored": option.get("stored", option["button"])}
+                for option in self.FRENCH_PROGRAM_VARIANTS
+            ]
+
         entry = {
             "id": identifier_candidate,
             "title": title,
@@ -753,6 +776,7 @@ class ConfettiTelegramBot:
             "photo_file_id": photo_file_id,
             "photo_url": photo_url,
             "code": code,
+            "variants": variants,
         }
         return entry, dirty
 
@@ -785,6 +809,25 @@ class ConfettiTelegramBot:
                     "photo_file_id": item.get("photo_file_id", ""),
                     "photo_url": item.get("photo_url", ""),
                     "code": item.get("code", ""),
+                    "variants": [
+                        {
+                            "button": option["button"],
+                            "stored": option.get("stored", option["button"]),
+                        }
+                        for option in (item.get("variants") or ())
+                    ]
+                    if item.get("variants")
+                    else (
+                        [
+                            {
+                                "button": option["button"],
+                                "stored": option.get("stored", option["button"]),
+                            }
+                            for option in self.FRENCH_PROGRAM_VARIANTS
+                        ]
+                        if item.get("code") == "french"
+                        else []
+                    ),
                 }
                 for item in self.DEFAULT_PROGRAMS
             ]
@@ -877,6 +920,23 @@ class ConfettiTelegramBot:
         if isinstance(programs, list):
             return programs
         return []
+
+    def _program_variants(self, program: Optional[dict[str, Any]]) -> list[dict[str, str]]:
+        if not isinstance(program, dict):
+            return []
+        variants_value = program.get("variants")
+        result: list[dict[str, str]] = []
+        if isinstance(variants_value, list):
+            for option in variants_value:
+                if not isinstance(option, dict):
+                    continue
+                button = str(option.get("button", "") or "").strip()
+                stored_raw = option.get("stored") or option.get("value")
+                stored = str(stored_raw or button).strip()
+                if not button:
+                    continue
+                result.append({"button": button, "stored": stored or button})
+        return result
 
     def _teacher_directory(self) -> list[dict[str, Any]]:
         teachers = self._persistent_store.get("teachers")
@@ -2636,10 +2696,12 @@ class ConfettiTelegramBot:
             return f"{base} — {variant}"
         return variant
 
-    def _french_variant_keyboard(self) -> "InlineKeyboardMarkup":
+    def _french_variant_keyboard(
+        self, variants: Sequence[dict[str, str]]
+    ) -> "InlineKeyboardMarkup":
         buttons = [
             [InlineKeyboardButton(option["button"], callback_data=f"reg_variant:{index}")]
-            for index, option in enumerate(self.FRENCH_PROGRAM_VARIANTS)
+            for index, option in enumerate(variants)
         ]
         buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_variant:back")])
         return InlineKeyboardMarkup(buttons)
@@ -2659,7 +2721,9 @@ class ConfettiTelegramBot:
             buttons = [[InlineKeyboardButton(self.BACK_BUTTON, callback_data="about:back")]]
         return InlineKeyboardMarkup(buttons)
 
-    def _about_french_variant_keyboard(self, program_index: int) -> "InlineKeyboardMarkup":
+    def _about_french_variant_keyboard(
+        self, program_index: int, variants: Sequence[dict[str, str]]
+    ) -> "InlineKeyboardMarkup":
         buttons = [
             [
                 InlineKeyboardButton(
@@ -2667,7 +2731,7 @@ class ConfettiTelegramBot:
                     callback_data=f"about_variant:{program_index}:{index}",
                 )
             ]
-            for index, option in enumerate(self.FRENCH_PROGRAM_VARIANTS)
+            for index, option in enumerate(variants)
         ]
         buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="about_variant:back")])
         return InlineKeyboardMarkup(buttons)
@@ -2724,18 +2788,18 @@ class ConfettiTelegramBot:
         context: ContextTypes.DEFAULT_TYPE,
         *,
         details: Optional[str] = None,
+        variants: Sequence[dict[str, str]],
     ) -> None:
         lines: list[str] = []
-        if details:
+        if details and details.strip():
             lines.append("Вы выбрали программу:")
-            lines.append(details)
+            lines.append(details.strip())
             lines.append("")
-        lines.append("Для программы «📚 Веселый французский» выберите подходящую группу.")
-        lines.append("Нажмите на кнопку, чтобы указать класс.")
+        lines.append("Выберите подходящую группу для занятий.")
         await self._reply(
             update,
             "\n".join(lines),
-            reply_markup=self._french_variant_keyboard(),
+            reply_markup=self._french_variant_keyboard(variants),
             prefer_edit=update.callback_query is not None,
         )
 
@@ -2791,18 +2855,17 @@ class ConfettiTelegramBot:
         registration = context.user_data.setdefault("registration", {})
         registration.pop("teacher", None)
 
-        program_code = str((selected_program or {}).get("code", ""))
+        variants = self._program_variants(selected_program)
 
-        if (
-            (program_code == "french" or program_label == self.FRENCH_PROGRAM_LABEL)
-            and len(self.FRENCH_PROGRAM_VARIANTS) > 0
-        ):
+        if variants:
             registration["program_base"] = program_label
+            registration["program_variants"] = [dict(option) for option in variants]
             registration.pop("program", None)
             await self._registration_prompt_french_variant(
                 update,
                 context,
                 details=details,
+                variants=variants,
             )
             return self.REGISTRATION_PROGRAM
 
@@ -2838,25 +2901,48 @@ class ConfettiTelegramBot:
         except (IndexError, ValueError):
             await query.answer("Не удалось определить группу.", show_alert=True)
             return self.REGISTRATION_PROGRAM
-        if not 0 <= index < len(self.FRENCH_PROGRAM_VARIANTS):
-            await query.answer("Вариант недоступен.", show_alert=True)
+        registration = context.user_data.setdefault("registration", {})
+        stored_variants = registration.get("program_variants")
+        variants_list: list[dict[str, str]] = []
+        if isinstance(stored_variants, list):
+            for option in stored_variants:
+                if isinstance(option, dict) and option.get("button"):
+                    variants_list.append({
+                        "button": str(option.get("button", "")),
+                        "stored": str(option.get("stored") or option.get("button") or ""),
+                    })
+        if not variants_list:
+            programs = self._program_catalog()
+            for program in programs:
+                program_variants = self._program_variants(program)
+                if not program_variants:
+                    continue
+                variants_list = [dict(option) for option in program_variants]
+                registration["program_variants"] = [dict(option) for option in program_variants]
+                break
+        if not 0 <= index < len(variants_list):
+            await query.answer("Группа недоступна.", show_alert=True)
             return self.REGISTRATION_PROGRAM
 
-        option = self.FRENCH_PROGRAM_VARIANTS[index]
-        registration = context.user_data.setdefault("registration", {})
+        option = variants_list[index]
         base_label = registration.pop("program_base", "")
         if not base_label:
             programs = self._program_catalog()
             for program in programs:
-                title_candidate = str(program.get("title", ""))
-                if not title_candidate:
-                    continue
-                if program.get("code") == "french" or title_candidate == self.FRENCH_PROGRAM_LABEL:
-                    base_label = title_candidate
+                variants = self._program_variants(program)
+                if any(
+                    candidate.get("button") == option.get("button")
+                    and candidate.get("stored") == option.get("stored")
+                    for candidate in variants
+                ):
+                    title_candidate = str(program.get("title", ""))
+                    if title_candidate:
+                        base_label = title_candidate
                     break
         if not base_label:
             base_label = self.FRENCH_PROGRAM_LABEL
         registration["program"] = self._compose_french_variant_label(base_label, option)
+        registration.pop("program_variants", None)
 
         await self._reply(
             update,
@@ -2878,6 +2964,7 @@ class ConfettiTelegramBot:
         for key in (
             "program",
             "program_base",
+            "program_variants",
             "teacher",
             "child_name",
             "school",
@@ -3787,6 +3874,78 @@ class ConfettiTelegramBot:
             [InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_about:delete:{index}")],
             [InlineKeyboardButton("⬅️ Назад", callback_data="admin_about:menu")],
         ]
+        if self._program_variants(program):
+            keyboard.insert(
+                1,
+                [InlineKeyboardButton("🎯 Управлять группами", callback_data=f"admin_about:variants:{index}")],
+            )
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            prefer_edit=effective_prefer_edit,
+        )
+
+    async def _admin_show_program_variants(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        notice: Optional[str] = None,
+        prefer_edit: bool = False,
+    ) -> None:
+        programs = self._program_catalog()
+        effective_prefer_edit = prefer_edit or update.callback_query is not None
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(
+                update,
+                context,
+                notice="Направление не найдено.",
+                prefer_edit=effective_prefer_edit,
+            )
+            return
+        program = programs[index]
+        variants = self._program_variants(program)
+        if not variants:
+            await self._admin_show_program_detail(
+                update,
+                context,
+                index,
+                notice="Для этого направления пока нет отдельных групп.",
+                prefer_edit=effective_prefer_edit,
+            )
+            return
+
+        title = program.get("title") or f"Направление {index + 1}"
+        lines: list[str] = []
+        if notice:
+            lines.append(notice)
+            lines.append("")
+        lines.append(f"Группы направления «{title}».")
+        lines.append("Выберите вариант, чтобы обновить название кнопки и подпись для таблиц.")
+        lines.append("")
+        for option in variants:
+            button_label = option.get("button") or "Без названия"
+            stored_label = option.get("stored") or button_label
+            if stored_label == button_label:
+                lines.append(f"• {button_label}")
+            else:
+                lines.append(f"• {button_label} (в таблицах: {stored_label})")
+
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    option.get("button") or f"Группа {idx + 1}",
+                    callback_data=f"admin_about:variant:{index}:{idx}",
+                )
+            ]
+            for idx, option in enumerate(variants)
+        ]
+        keyboard.append(
+            [InlineKeyboardButton("⬅️ Назад", callback_data=f"admin_about:edit:{index}")]
+        )
+
         await self._reply(
             update,
             "\n".join(lines),
@@ -3872,6 +4031,47 @@ class ConfettiTelegramBot:
             "Можно отправить ссылку (http…)."
             + self.ADMIN_CANCEL_PROMPT
         )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_program_variant(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int, variant_index: int
+    ) -> None:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return
+        program = programs[index]
+        variants = self._program_variants(program)
+        if not 0 <= variant_index < len(variants):
+            await self._admin_show_program_variants(
+                update,
+                context,
+                index,
+                notice="Группа не найдена.",
+            )
+            return
+        title = program.get("title") or f"Направление {index + 1}"
+        current_button = variants[variant_index].get("button") or ""
+        current_stored = variants[variant_index].get("stored") or current_button
+        context.chat_data["pending_admin_action"] = {
+            "type": "variant_update",
+            "program_index": index,
+            "variant_index": variant_index,
+        }
+        message_parts = [
+            f"Введите новый текст для группы «{current_button or f'Группа {variant_index + 1}'}» направления «{title}».",
+            "Первая строка — подпись кнопки.",
+            "Вторая строка (необязательно) — название для таблиц и заявок.",
+        ]
+        if current_stored and current_stored != current_button:
+            message_parts.append(
+                f"Сейчас в таблицах используется формулировка: {current_stored}."
+            )
+        message = "\n".join(message_parts) + self.ADMIN_CANCEL_PROMPT
         await self._reply(
             update,
             message,
@@ -4039,6 +4239,68 @@ class ConfettiTelegramBot:
             context,
             index,
             notice=notice,
+        )
+        return True
+
+    async def _admin_update_program_variant(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        program_index: int,
+        variant_index: int,
+        *,
+        text: str,
+    ) -> bool:
+        programs = self._program_catalog()
+        if not 0 <= program_index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return True
+        program = programs[program_index]
+        variants = self._program_variants(program)
+        if not 0 <= variant_index < len(variants):
+            await self._admin_show_program_variants(
+                update,
+                context,
+                program_index,
+                notice="Группа не найдена.",
+                prefer_edit=True,
+            )
+            return True
+
+        trimmed = text.strip()
+        if not trimmed:
+            await self._reply(
+                update,
+                "Пожалуйста, отправьте новый текст для группы.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+
+        lines = [line.strip() for line in trimmed.splitlines() if line.strip()]
+        button_label = lines[0]
+        stored_label = lines[1] if len(lines) > 1 else lines[0]
+
+        program.setdefault("variants", [])
+        program_variants = program["variants"]
+        if not isinstance(program_variants, list):
+            program_variants = []
+            program["variants"] = program_variants
+
+        while len(program_variants) < len(variants):
+            program_variants.append({"button": "", "stored": ""})
+
+        program_variants[variant_index] = {
+            "button": button_label,
+            "stored": stored_label or button_label,
+        }
+
+        self._save_persistent_state()
+        await self._admin_show_program_variants(
+            update,
+            context,
+            program_index,
+            notice="Группа обновлена.",
+            prefer_edit=True,
         )
         return True
 
@@ -4445,6 +4707,7 @@ class ConfettiTelegramBot:
         parts = (query.data or "").split(":")
         action = parts[1] if len(parts) > 1 else ""
         argument = parts[2] if len(parts) > 2 else ""
+        extra = parts[3] if len(parts) > 3 else ""
 
         def _parse_index(token: str) -> Optional[int]:
             try:
@@ -4473,6 +4736,23 @@ class ConfettiTelegramBot:
                 return
             await query.answer()
             await self._admin_show_program_detail(update, context, index, prefer_edit=True)
+            return
+        if action == "variants":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось открыть список групп.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_show_program_variants(update, context, index, prefer_edit=True)
+            return
+        if action == "variant":
+            index = _parse_index(argument)
+            variant_index = _parse_index(extra)
+            if index is None or variant_index is None:
+                await query.answer("Не удалось определить группу.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_program_variant(update, context, index, variant_index)
             return
         if action == "rename":
             index = _parse_index(argument)
@@ -4790,6 +5070,24 @@ class ConfettiTelegramBot:
                 index,
                 text=text,
                 attachments=attachments,
+            ):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "variant_update":
+            program_index = pending.get("program_index")
+            variant_index = pending.get("variant_index")
+            if (
+                isinstance(program_index, int)
+                and isinstance(variant_index, int)
+                and await self._admin_update_program_variant(
+                    update,
+                    context,
+                    program_index,
+                    variant_index,
+                    text=text,
+                )
             ):
                 context.chat_data.pop("pending_admin_action", None)
             else:
@@ -6031,13 +6329,15 @@ class ConfettiTelegramBot:
         program = programs[index]
         await query.answer()
 
-        program_code = str(program.get("code", ""))
-        program_title = str(program.get("title", ""))
-        if (
-            (program_code == "french" or program_title == self.FRENCH_PROGRAM_LABEL)
-            and len(self.FRENCH_PROGRAM_VARIANTS) > 0
-        ):
-            await self._about_prompt_french_variants(update, context, program, index)
+        variants = self._program_variants(program)
+        if variants:
+            await self._about_prompt_french_variants(
+                update,
+                context,
+                program,
+                index,
+                variants=variants,
+            )
             return
 
         overview = self._format_program_details(program)
@@ -6075,6 +6375,8 @@ class ConfettiTelegramBot:
         context: ContextTypes.DEFAULT_TYPE,
         program: Dict[str, Any],
         program_index: int,
+        *,
+        variants: Sequence[dict[str, str]],
     ) -> None:
         overview = self._format_program_details(program)
         instruction = "Выберите подходящую группу:"
@@ -6088,7 +6390,7 @@ class ConfettiTelegramBot:
             file_key="photo_file_id",
             url_key="photo_url",
         )
-        keyboard = self._about_french_variant_keyboard(program_index)
+        keyboard = self._about_french_variant_keyboard(program_index, variants)
         if photo_reference:
             await self._reply(
                 update,
@@ -6146,12 +6448,13 @@ class ConfettiTelegramBot:
             await query.answer("Направление не найдено.", show_alert=True)
             return
 
-        if not 0 <= variant_index < len(self.FRENCH_PROGRAM_VARIANTS):
+        program = programs[program_index]
+        variants = self._program_variants(program)
+        if not 0 <= variant_index < len(variants):
             await query.answer("Группа не найдена.", show_alert=True)
             return
 
-        program = programs[program_index]
-        option = self.FRENCH_PROGRAM_VARIANTS[variant_index]
+        option = variants[variant_index]
 
         full_title = self._compose_french_variant_label(str(program.get("title", "")), option)
         body = str(program.get("body", "")).strip()
@@ -6164,7 +6467,7 @@ class ConfettiTelegramBot:
             file_key="photo_file_id",
             url_key="photo_url",
         )
-        keyboard = self._about_french_variant_keyboard(program_index)
+        keyboard = self._about_french_variant_keyboard(program_index, variants)
 
         await self._reply(
             update,
