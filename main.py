@@ -457,6 +457,30 @@ class ConfettiTelegramBot:
         },
     )
 
+    FRENCH_PROGRAM_LABEL = "📚 Веселый французский"
+    FRENCH_PROGRAM_VARIANTS: tuple[dict[str, str], ...] = (
+        {
+            "button": "для первого класса",
+            "stored": "📚 Веселый французский — для первого класса",
+        },
+        {
+            "button": "для второго класса",
+            "stored": "📚 Веселый французский — для второго класса",
+        },
+        {
+            "button": "для 3 класса",
+            "stored": "📚 Веселый французский — для 3 класса",
+        },
+        {
+            "button": "для 4 класса",
+            "stored": "📚 Веселый французский — для 4 класса",
+        },
+        {
+            "button": "для 5-8 классов",
+            "stored": "📚 Веселый французский — для 5-8 классов",
+        },
+    )
+
     TEACHERS = (
         {
             "key": "nastytsch",
@@ -1226,6 +1250,14 @@ class ConfettiTelegramBot:
                         CallbackQueryHandler(
                             self._registration_collect_program,
                             pattern=r"^reg_program:\d+$",
+                        ),
+                        CallbackQueryHandler(
+                            self._registration_collect_program_variant,
+                            pattern=r"^reg_variant:\d+$",
+                        ),
+                        CallbackQueryHandler(
+                            self._registration_variant_back_to_program,
+                            pattern=r"^reg_variant:back$",
                         ),
                         CallbackQueryHandler(
                             self._registration_cancel_from_program,
@@ -2366,6 +2398,14 @@ class ConfettiTelegramBot:
         buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_back:menu")])
         return InlineKeyboardMarkup(buttons)
 
+    def _french_variant_keyboard(self) -> "InlineKeyboardMarkup":
+        buttons = [
+            [InlineKeyboardButton(option["button"], callback_data=f"reg_variant:{index}")]
+            for index, option in enumerate(self.FRENCH_PROGRAM_VARIANTS)
+        ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_variant:back")])
+        return InlineKeyboardMarkup(buttons)
+
     def _about_inline_keyboard(self) -> "InlineKeyboardMarkup":
         buttons = [
             [InlineKeyboardButton(program["label"], callback_data=f"about:{index}")]
@@ -2409,11 +2449,45 @@ class ConfettiTelegramBot:
         )
         return self.REGISTRATION_PROGRAM
 
+    async def _registration_prompt_french_variant(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        details: Optional[str] = None,
+    ) -> None:
+        lines: list[str] = []
+        if details:
+            lines.append("Вы выбрали программу:")
+            lines.append(details)
+            lines.append("")
+        lines.append("Для программы «📚 Веселый французский» выберите подходящую группу.")
+        lines.append("Нажмите на кнопку, чтобы указать класс.")
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=self._french_variant_keyboard(),
+            prefer_edit=update.callback_query is not None,
+        )
+
+    def _prefill_registration_defaults(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        defaults = self._get_user_defaults(update.effective_user)
+        if not defaults:
+            return
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("child_name", "school", "class", "contact_name", "phone", "comment"):
+            value = defaults.get(key)
+            if value and not registration.get(key):
+                registration[key] = value
+
     async def _registration_collect_program(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         query = update.callback_query
         message = update.message
 
         program_label = ""
+        details = ""
         selected_program: Optional[dict[str, str]] = None
         if query is not None:
             data = query.data or ""
@@ -2428,7 +2502,40 @@ class ConfettiTelegramBot:
             program = self.PROGRAMS[index]
             await query.answer()
             program_label = program["label"]
-            details = self._format_program_details(program)
+            selected_program = program
+        else:
+            program_label = (message.text if message else "").strip()
+            program = next((item for item in self.PROGRAMS if item["label"] == program_label), None)
+            if not program:
+                await self._registration_prompt_program_buttons(update, context)
+                return self.REGISTRATION_PROGRAM
+            selected_program = program
+        if selected_program is not None:
+            details = self._format_program_details(selected_program)
+        if query is None and details:
+            await self._reply(update, f"Вы выбрали программу:\n{details}")
+
+        registration = context.user_data.setdefault("registration", {})
+        teacher = (selected_program or {}).get("teacher") or self._resolve_program_teacher(program_label)
+        if teacher:
+            registration["teacher"] = teacher
+        else:
+            registration.pop("teacher", None)
+
+        if (
+            program_label == self.FRENCH_PROGRAM_LABEL
+            and len(self.FRENCH_PROGRAM_VARIANTS) > 0
+        ):
+            registration["program_base"] = program_label
+            registration.pop("program", None)
+            await self._registration_prompt_french_variant(
+                update,
+                context,
+                details=details,
+            )
+            return self.REGISTRATION_PROGRAM
+
+        if query is not None and details:
             if query.message is not None:
                 try:  # pragma: no cover - depends on telegram runtime
                     await query.edit_message_text(f"Вы выбрали программу:\n{details}")
@@ -2440,31 +2547,70 @@ class ConfettiTelegramBot:
                     await self._reply(update, f"Вы выбрали программу:\n{details}")
             else:
                 await self._reply(update, f"Вы выбрали программу:\n{details}")
-            selected_program = program
-        else:
-            program_label = (message.text if message else "").strip()
-            program = next((item for item in self.PROGRAMS if item["label"] == program_label), None)
-            if not program:
-                await self._registration_prompt_program_buttons(update, context)
-                return self.REGISTRATION_PROGRAM
-            selected_program = program
 
-        registration = context.user_data.setdefault("registration", {})
+        registration.pop("program_base", None)
         registration["program"] = program_label
-        teacher = (selected_program or {}).get("teacher") or self._resolve_program_teacher(program_label)
-        if teacher:
-            registration["teacher"] = teacher
-        else:
-            registration.pop("teacher", None)
-
-        defaults = self._get_user_defaults(update.effective_user)
-        if defaults:
-            for key in ("child_name", "school", "class", "contact_name", "phone", "comment"):
-                value = defaults.get(key)
-                if value and not registration.get(key):
-                    registration[key] = value
+        self._prefill_registration_defaults(update, context)
 
         return await self._registration_prompt_child_name(update, context)
+
+    async def _registration_collect_program_variant(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        query = update.callback_query
+        if query is None:
+            return self.REGISTRATION_PROGRAM
+
+        data = query.data or ""
+        try:
+            index = int(data.split(":", 1)[1])
+        except (IndexError, ValueError):
+            await query.answer("Не удалось определить группу.", show_alert=True)
+            return self.REGISTRATION_PROGRAM
+        if not 0 <= index < len(self.FRENCH_PROGRAM_VARIANTS):
+            await query.answer("Вариант недоступен.", show_alert=True)
+            return self.REGISTRATION_PROGRAM
+
+        option = self.FRENCH_PROGRAM_VARIANTS[index]
+        registration = context.user_data.setdefault("registration", {})
+        registration["program"] = option["stored"]
+        registration.pop("program_base", None)
+
+        if not registration.get("teacher"):
+            teacher = self._resolve_program_teacher(self.FRENCH_PROGRAM_LABEL)
+            if teacher:
+                registration["teacher"] = teacher
+
+        await self._reply(
+            update,
+            f"Вы выбрали программу:\n{option['stored']}",
+            prefer_edit=True,
+        )
+
+        self._prefill_registration_defaults(update, context)
+
+        return await self._registration_prompt_child_name(update, context)
+
+    async def _registration_variant_back_to_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        query = update.callback_query
+        if query is not None:
+            await query.answer()
+        registration = context.user_data.setdefault("registration", {})
+        for key in (
+            "program",
+            "program_base",
+            "teacher",
+            "child_name",
+            "school",
+            "class",
+            "contact_name",
+            "phone",
+            "comment",
+        ):
+            registration.pop(key, None)
+        return await self._registration_prompt_program_buttons(update, context)
 
     async def _registration_prompt_child_name(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
@@ -2586,6 +2732,7 @@ class ConfettiTelegramBot:
         registration = context.user_data.setdefault("registration", {})
         for key in (
             "program",
+            "program_base",
             "teacher",
             "child_name",
             "school",
