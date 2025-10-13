@@ -460,24 +460,24 @@ class ConfettiTelegramBot:
     FRENCH_PROGRAM_LABEL = "📚 Веселый французский"
     FRENCH_PROGRAM_VARIANTS: tuple[dict[str, str], ...] = (
         {
-            "button": "для первого класса",
-            "stored": "📚 Веселый французский — для первого класса",
+            "button": "Для 1 класса",
+            "stored": "Для 1 класса",
         },
         {
-            "button": "для второго класса",
-            "stored": "📚 Веселый французский — для второго класса",
+            "button": "Для 2 класса",
+            "stored": "Для 2 класса",
         },
         {
-            "button": "для 3 класса",
-            "stored": "📚 Веселый французский — для 3 класса",
+            "button": "Для 3 класса",
+            "stored": "Для 3 класса",
         },
         {
-            "button": "для 4 класса",
-            "stored": "📚 Веселый французский — для 4 класса",
+            "button": "Для 4 класса",
+            "stored": "Для 4 класса",
         },
         {
-            "button": "для 5-8 классов",
-            "stored": "📚 Веселый французский — для 5-8 классов",
+            "button": "Для 5-8 классов",
+            "stored": "Для 5-8 классов",
         },
     )
 
@@ -1726,6 +1726,7 @@ class ConfettiTelegramBot:
         application.add_handler(conversation)
         application.add_handler(payment_report)
         application.add_handler(cancellation)
+        application.add_handler(CallbackQueryHandler(self._about_show_french_variant, pattern=r"^about_variant:"))
         application.add_handler(CallbackQueryHandler(self._about_show_direction, pattern=r"^about:"))
         application.add_handler(CallbackQueryHandler(self._teacher_show_profile, pattern=r"^teacher:"))
         application.add_handler(CallbackQueryHandler(self._admin_about_callback, pattern=r"^admin_about:"))
@@ -2624,6 +2625,17 @@ class ConfettiTelegramBot:
             buttons = [[InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_back:menu")]]
         return InlineKeyboardMarkup(buttons)
 
+    def _compose_french_variant_label(self, base_label: str, option: dict[str, str]) -> str:
+        base = str(base_label or "").strip()
+        variant = str(option.get("stored") or option.get("button") or "").strip()
+        if not variant:
+            return base
+        if base and variant.lower().startswith(base.lower()):
+            return variant
+        if base:
+            return f"{base} — {variant}"
+        return variant
+
     def _french_variant_keyboard(self) -> "InlineKeyboardMarkup":
         buttons = [
             [InlineKeyboardButton(option["button"], callback_data=f"reg_variant:{index}")]
@@ -2645,6 +2657,19 @@ class ConfettiTelegramBot:
         ]
         if not buttons:
             buttons = [[InlineKeyboardButton(self.BACK_BUTTON, callback_data="about:back")]]
+        return InlineKeyboardMarkup(buttons)
+
+    def _about_french_variant_keyboard(self, program_index: int) -> "InlineKeyboardMarkup":
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    option["button"],
+                    callback_data=f"about_variant:{program_index}:{index}",
+                )
+            ]
+            for index, option in enumerate(self.FRENCH_PROGRAM_VARIANTS)
+        ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="about_variant:back")])
         return InlineKeyboardMarkup(buttons)
 
     def _teacher_inline_keyboard(self) -> "InlineKeyboardMarkup":
@@ -2819,12 +2844,23 @@ class ConfettiTelegramBot:
 
         option = self.FRENCH_PROGRAM_VARIANTS[index]
         registration = context.user_data.setdefault("registration", {})
-        registration["program"] = option["stored"]
-        registration.pop("program_base", None)
+        base_label = registration.pop("program_base", "")
+        if not base_label:
+            programs = self._program_catalog()
+            for program in programs:
+                title_candidate = str(program.get("title", ""))
+                if not title_candidate:
+                    continue
+                if program.get("code") == "french" or title_candidate == self.FRENCH_PROGRAM_LABEL:
+                    base_label = title_candidate
+                    break
+        if not base_label:
+            base_label = self.FRENCH_PROGRAM_LABEL
+        registration["program"] = self._compose_french_variant_label(base_label, option)
 
         await self._reply(
             update,
-            f"Вы выбрали программу:\n{option['stored']}",
+            f"Вы выбрали программу:\n{registration['program']}",
             prefer_edit=True,
         )
 
@@ -5995,6 +6031,15 @@ class ConfettiTelegramBot:
         program = programs[index]
         await query.answer()
 
+        program_code = str(program.get("code", ""))
+        program_title = str(program.get("title", ""))
+        if (
+            (program_code == "french" or program_title == self.FRENCH_PROGRAM_LABEL)
+            and len(self.FRENCH_PROGRAM_VARIANTS) > 0
+        ):
+            await self._about_prompt_french_variants(update, context, program, index)
+            return
+
         overview = self._format_program_details(program)
         photo_reference = self._resolve_media_reference(
             program,
@@ -6021,6 +6066,121 @@ class ConfettiTelegramBot:
             update,
             overview + "\n\n",
             reply_markup=self._about_inline_keyboard(),
+            prefer_edit=True,
+        )
+
+    async def _about_prompt_french_variants(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        program: Dict[str, Any],
+        program_index: int,
+    ) -> None:
+        overview = self._format_program_details(program)
+        instruction = "Выберите подходящую группу:"
+        caption = overview.strip()
+        if caption:
+            caption = f"{caption}\n\n{instruction}"
+        else:
+            caption = instruction
+        photo_reference = self._resolve_media_reference(
+            program,
+            file_key="photo_file_id",
+            url_key="photo_url",
+        )
+        keyboard = self._about_french_variant_keyboard(program_index)
+        if photo_reference:
+            await self._reply(
+                update,
+                text=None,
+                reply_markup=keyboard,
+                media=[
+                    MediaAttachment(
+                        kind="photo",
+                        file_id=photo_reference,
+                        caption=caption,
+                    )
+                ],
+                prefer_edit=True,
+            )
+            return
+
+        await self._reply(
+            update,
+            caption + "\n\n",
+            reply_markup=keyboard,
+            prefer_edit=True,
+        )
+
+    async def _about_show_french_variant(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+
+        payload = (query.data or "").split(":", 2)
+        if len(payload) < 2:
+            await query.answer("Не удалось определить группу.", show_alert=True)
+            return
+
+        action = payload[1]
+        if action == "back":
+            await query.answer()
+            await self._send_about(update, context)
+            return
+
+        if len(payload) != 3:
+            await query.answer("Не удалось определить группу.", show_alert=True)
+            return
+
+        try:
+            program_index = int(action)
+            variant_index = int(payload[2])
+        except ValueError:
+            await query.answer("Не удалось определить группу.", show_alert=True)
+            return
+
+        programs = self._program_catalog()
+        if not 0 <= program_index < len(programs):
+            await query.answer("Направление не найдено.", show_alert=True)
+            return
+
+        if not 0 <= variant_index < len(self.FRENCH_PROGRAM_VARIANTS):
+            await query.answer("Группа не найдена.", show_alert=True)
+            return
+
+        program = programs[program_index]
+        option = self.FRENCH_PROGRAM_VARIANTS[variant_index]
+
+        full_title = self._compose_french_variant_label(str(program.get("title", "")), option)
+        body = str(program.get("body", "")).strip()
+        caption = full_title.strip()
+        if body:
+            caption = f"{caption}\n\n{body}" if caption else body
+
+        photo_reference = self._resolve_media_reference(
+            program,
+            file_key="photo_file_id",
+            url_key="photo_url",
+        )
+        keyboard = self._about_french_variant_keyboard(program_index)
+
+        await self._reply(
+            update,
+            text=None if photo_reference else caption + "\n\n",
+            reply_markup=keyboard,
+            media=(
+                [
+                    MediaAttachment(
+                        kind="photo",
+                        file_id=photo_reference,
+                        caption=caption,
+                    )
+                ]
+                if photo_reference
+                else None
+            ),
             prefer_edit=True,
         )
 
