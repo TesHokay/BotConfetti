@@ -324,7 +324,10 @@ class ConfettiTelegramBot:
     REGISTRATION_TIME_DECISION = 8
 
     CANCELLATION_PROGRAM = 21
-    CANCELLATION_REASON = 22
+    CANCELLATION_CONTACT = 22
+    CANCELLATION_CHILD = 23
+    CANCELLATION_PHONE = 24
+    CANCELLATION_REASON = 25
 
     PAYMENT_REPORT_PROGRAM = 41
     PAYMENT_REPORT_NAME = 42
@@ -332,7 +335,7 @@ class ConfettiTelegramBot:
 
     MAIN_MENU_BUTTON = "⬅️ Главное меню"
     REGISTRATION_BUTTON = "📝 Запись"
-    CANCELLATION_BUTTON = "❗️ Отменить занятие"
+    CANCELLATION_BUTTON = "❗️ Сообщить об отсутствии"
     REGISTRATION_CONFIRM_SAVED_BUTTON = "✅ Продолжить"
     REGISTRATION_EDIT_DETAILS_BUTTON = "✏️ Изменить данные"
     REGISTRATION_KEEP_TIME_BUTTON = "🔁 То же время"
@@ -384,7 +387,7 @@ class ConfettiTelegramBot:
         (REGISTRATION_BUTTON, "📅 Расписание"),
         ("ℹ️ О студии", "👩‍🏫 Преподаватели"),
         (PAYMENT_REPORT_BUTTON, "📞 Контакты"),
-        ("📚 Полезные слова", CANCELLATION_BUTTON),
+        ("📚 Слово дня", CANCELLATION_BUTTON),
     )
 
     PROGRAMS = (
@@ -1369,17 +1372,74 @@ class ConfettiTelegramBot:
                 ],
                 states={
                 self.CANCELLATION_PROGRAM: [
+                    CallbackQueryHandler(
+                        self._cancellation_collect_program,
+                        pattern=r"^absence_program:\d+$",
+                    ),
+                    CallbackQueryHandler(
+                        self._cancellation_cancel_from_program,
+                        pattern=r"^absence_back:menu$",
+                    ),
                     MessageHandler(
                         filters.TEXT & ~filters.COMMAND,
-                        self._cancellation_collect_program,
+                        self._cancellation_prompt_program,
                     ),
+                ],
+                self.CANCELLATION_CONTACT: [
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._cancellation_cancel,
                     ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._cancellation_back_to_program,
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._cancellation_collect_contact,
+                    ),
+                ],
+                self.CANCELLATION_CHILD: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._cancellation_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._cancellation_back_to_contact,
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._cancellation_collect_child,
+                    ),
+                ],
+                self.CANCELLATION_PHONE: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._cancellation_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._cancellation_back_to_child,
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._cancellation_collect_phone,
+                    ),
                 ],
                 self.CANCELLATION_REASON: [
-                    MessageHandler(~filters.COMMAND, self._cancellation_collect_reason),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._cancellation_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._cancellation_back_to_phone,
+                    ),
+                    MessageHandler(
+                        ~filters.COMMAND,
+                        self._cancellation_collect_reason,
+                    ),
                 ],
                 },
                 fallbacks=[
@@ -1741,56 +1801,6 @@ class ConfettiTelegramBot:
             self._save_persistent_state()
 
 
-    async def _remove_registration_for_cancellation(
-        self,
-        context: ContextTypes.DEFAULT_TYPE,
-        cancellation: dict[str, Any],
-    ) -> Optional[dict[str, Any]]:
-        registrations = self._application_data(context).get("registrations")
-        if not isinstance(registrations, list):
-            return None
-
-        target_id = cancellation.get("registration_id")
-        target_id_str = str(target_id) if target_id is not None else None
-
-        match_index: Optional[int] = None
-        if target_id_str:
-            for index in range(len(registrations) - 1, -1, -1):
-                candidate = registrations[index]
-                if not isinstance(candidate, dict):
-                    continue
-                if str(candidate.get("id")) == target_id_str:
-                    match_index = index
-                    break
-
-        if match_index is None:
-            chat_id = cancellation.get("chat_id")
-            user_id = cancellation.get("submitted_by_id")
-            program = cancellation.get("program")
-            time_value = cancellation.get("time")
-            for index in range(len(registrations) - 1, -1, -1):
-                candidate = registrations[index]
-                if not isinstance(candidate, dict):
-                    continue
-                if chat_id is not None and candidate.get("chat_id") != chat_id:
-                    continue
-                if user_id is not None and candidate.get("submitted_by_id") != user_id:
-                    continue
-                if program and candidate.get("program") != program:
-                    continue
-                if time_value and candidate.get("time") != time_value:
-                    continue
-                match_index = index
-                break
-
-        if match_index is None:
-            return None
-
-        removed = registrations.pop(match_index)
-        self._remove_user_registration_snapshot(removed)
-
-        return removed
-
     def _describe_attachment(self, attachment: MediaAttachment) -> str:
         labels = {
             "photo": "Фото",
@@ -1805,66 +1815,6 @@ class ConfettiTelegramBot:
         if attachment.caption:
             return f"{title}: {attachment.caption}"
         return f"{title} во вложении"
-
-    async def _store_cancellation(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        data: dict[str, Any],
-        attachments: Optional[list[MediaAttachment]] = None,
-    ) -> None:
-        chat = update.effective_chat
-        user = update.effective_user
-        record = {
-            "program": data.get("program", ""),
-            "time": data.get("time", ""),
-            "child_name": data.get("child_name", ""),
-            "registration_id": data.get("registration_id"),
-            "details": data.get("details", ""),
-            "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
-            "submitted_by": getattr(user, "full_name", None) if user else None,
-            "submitted_by_id": getattr(user, "id", None) if user else None,
-            "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-            "attachments": self._attachments_to_dicts(attachments or [])
-            if attachments
-            else data.get("evidence", []),
-        }
-        storage = self._application_data(context).setdefault("cancellations", [])
-        if isinstance(storage, list):
-            storage.append(record)
-        else:
-            self._application_data(context)["cancellations"] = [record]
-
-        removed = await self._remove_registration_for_cancellation(context, record)
-        if removed:
-            record["removed_registration_id"] = removed.get("id")
-            record["removed_child"] = removed.get("child_name")
-            record["removed_program"] = removed.get("program")
-            record["removed_time"] = removed.get("time")
-
-        self._save_persistent_state()
-
-        admin_message = (
-            "🚫 Отмена занятия\n"
-            f"📚 Программа: {record.get('program', '—')}\n"
-            f"🕒 Время: {record.get('time', '—')}\n"
-            f"👦 Участник: {record.get('child_name', '—')}\n"
-            f"📝 Комментарий: {record.get('details', '—')}\n"
-            f"👤 Отправил: {record.get('submitted_by', '—')}"
-        )
-        if removed:
-            admin_message += (
-                "\n🗂 Заявка удалена из таблицы: "
-                f"{removed.get('child_name', '—')} ({removed.get('program', '—')}, {removed.get('time', '—')})"
-            )
-        else:
-            admin_message += "\n⚠️ В таблице не нашлось записи, соответствующей этой отмене."
-        await self._notify_admins(
-            context,
-            admin_message,
-            media=self._dicts_to_attachments(record.get("attachments")),
-        )
-        context.user_data.pop("cancellation", None)
 
     async def _start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Send the greeting and display the main menu."""
@@ -2696,10 +2646,59 @@ class ConfettiTelegramBot:
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
-    def _cancellation_keyboard(self, labels: list[str]) -> ReplyKeyboardMarkup:
-        keyboard = [[label] for label in labels]
-        keyboard.append([self.BACK_BUTTON, self.MAIN_MENU_BUTTON])
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    def _absence_intro(self) -> str:
+        return (
+            "Выберите направление, по которому хотите сообщить об отсутствии.\n\n"
+            "⚠️ Оплата не возвращается — средства остаются на балансе студии."
+        )
+
+    def _absence_program_keyboard(self) -> "InlineKeyboardMarkup":
+        buttons = [
+            [InlineKeyboardButton(program["label"], callback_data=f"absence_program:{index}")]
+            for index, program in enumerate(self.PROGRAMS)
+        ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="absence_back:menu")])
+        return InlineKeyboardMarkup(buttons)
+
+    async def _absence_prompt_contact(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        await self._reply(
+            update,
+            "Напишите фамилию и имя контактного лица, который сообщает об отсутствии.",
+            reply_markup=self._back_keyboard(),
+        )
+        return self.CANCELLATION_CONTACT
+
+    async def _absence_prompt_child(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        await self._reply(
+            update,
+            "Укажите имя и фамилию ребёнка, который пропустит занятие.",
+            reply_markup=self._back_keyboard(),
+        )
+        return self.CANCELLATION_CHILD
+
+    async def _absence_prompt_phone(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        await self._reply(
+            update,
+            "Оставьте контактный номер телефона для связи.",
+            reply_markup=self._phone_keyboard(),
+        )
+        return self.CANCELLATION_PHONE
+
+    async def _absence_prompt_reason(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        await self._reply(
+            update,
+            "Расскажите, по какой причине ребёнок пропустит занятие.",
+            reply_markup=self._back_keyboard(),
+        )
+        return self.CANCELLATION_REASON
 
     async def _registration_collect_phone_text(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -3090,146 +3089,164 @@ class ConfettiTelegramBot:
 
     async def _start_cancellation(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         self._remember_chat(update, context)
-        await self._purge_expired_registrations(context)
-        records = self._collect_user_registrations(update.effective_user, update.effective_chat)
-        if not records:
-            await self._reply(
-                update,
-                "ℹ️ Активных записей не найдено.",
-                reply_markup=self._main_menu_markup_for(update, context),
-            )
-            await self._show_main_menu(update, context)
-            return ConversationHandler.END
-
-        sorted_records = sorted(
-            records,
-            key=lambda item: self._parse_record_timestamp(item.get("created_at")) or datetime.min,
-            reverse=True,
-        )
-        options: dict[str, dict[str, Any]] = {}
-        counts: dict[str, int] = {}
-        for record in sorted_records:
-            base_label = self._format_cancellation_option(record)
-            index = counts.get(base_label, 0)
-            counts[base_label] = index + 1
-            label = base_label if index == 0 else f"{base_label} ({index + 1})"
-            options[label] = record
-
-        context.user_data["cancellation"] = {"options": options}
-        message = (
-            "❗️ Выберите занятие, которое хотите отменить.\n\n"
-            "⚠️ Оплата не возвращается — средства остаются на балансе студии."
-        )
+        context.user_data["absence"] = {}
         await self._reply(
             update,
-            message,
-            reply_markup=self._cancellation_keyboard(list(options.keys())),
+            self._absence_intro(),
+            reply_markup=self._absence_program_keyboard(),
         )
         return self.CANCELLATION_PROGRAM
 
-    def _format_cancellation_option(self, record: dict[str, Any]) -> str:
-        program = str(record.get("program", "")) or "Без программы"
-        time = str(record.get("time", ""))
-        child = str(record.get("child_name", ""))
-        record_id = str(record.get("id", ""))
-        suffix = f"#{record_id[-4:]}" if record_id else ""
-        components = [program]
-        if time:
-            components.append(time)
-        if child:
-            components.append(child)
-        if suffix:
-            components.append(suffix)
-        return " • ".join(components)
+    async def _cancellation_prompt_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        await self._reply(
+            update,
+            self._absence_intro(),
+            reply_markup=self._absence_program_keyboard(),
+            prefer_edit=update.callback_query is not None,
+        )
+        return self.CANCELLATION_PROGRAM
 
     async def _cancellation_collect_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        payload = update.message.text.strip()
-        if payload == self.MAIN_MENU_BUTTON:
-            return await self._cancellation_cancel(update, context)
-        if payload == self.BACK_BUTTON:
-            return await self._cancellation_cancel(update, context)
+        query = update.callback_query
+        if query is None or not query.data:
+            return await self._cancellation_prompt_program(update, context)
+        try:
+            index = int(query.data.split(":", 1)[1])
+        except (IndexError, ValueError):
+            return await self._cancellation_prompt_program(update, context)
+        if not 0 <= index < len(self.PROGRAMS):
+            return await self._cancellation_prompt_program(update, context)
 
-        data = context.user_data.setdefault("cancellation", {})
-        options: dict[str, dict[str, Any]] = data.get("options", {})  # type: ignore[assignment]
-        record = options.get(payload)
-        if record is None:
-            await self._reply(
-                update,
-                "Пожалуйста, выберите запись из списка.",
-                reply_markup=self._cancellation_keyboard(list(options.keys())),
-            )
-            return self.CANCELLATION_PROGRAM
+        program = self.PROGRAMS[index]
+        data = context.user_data.setdefault("absence", {})
+        data.clear()
+        data["program"] = program["label"]
 
-        data["selected_registration"] = record
-        data["program"] = record.get("program", "")
-        data["time"] = record.get("time", "")
-        data["child_name"] = record.get("child_name", "")
-        data["registration_id"] = record.get("id")
-        await self._reply(
-            update,
-            "📅 Напишите дату и время пропуска, а также короткий комментарий.",
-            reply_markup=self._back_keyboard(),
-        )
-        return self.CANCELLATION_REASON
+        return await self._absence_prompt_contact(update, context)
 
-    async def _cancellation_restart_program(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        options: dict[str, dict[str, Any]],
+    async def _cancellation_cancel_from_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        data = context.user_data.setdefault("cancellation", {})
-        data.pop("details", None)
-        data.pop("evidence", None)
-        message = (
-            "❗️ Выберите занятие, которое хотите отменить.\n\n"
-            "⚠️ Оплата не возвращается — средства остаются на балансе студии."
-        )
-        await self._reply(
-            update,
-            message,
-            reply_markup=self._cancellation_keyboard(list(options.keys())),
-        )
-        return self.CANCELLATION_PROGRAM
+        return await self._cancellation_cancel(update, context)
+
+    async def _cancellation_back_to_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("absence", {})
+        for key in ("contact_name", "child_name", "phone", "reason"):
+            data.pop(key, None)
+        data.pop("program", None)
+        return await self._cancellation_prompt_program(update, context)
+
+    async def _cancellation_collect_contact(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._cancellation_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._cancellation_back_to_program(update, context)
+
+        data = context.user_data.setdefault("absence", {})
+        data["contact_name"] = text
+        return await self._absence_prompt_child(update, context)
+
+    async def _cancellation_back_to_contact(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("absence", {})
+        data.pop("child_name", None)
+        return await self._absence_prompt_contact(update, context)
+
+    async def _cancellation_collect_child(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._cancellation_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._cancellation_back_to_contact(update, context)
+
+        data = context.user_data.setdefault("absence", {})
+        data["child_name"] = text
+        return await self._absence_prompt_phone(update, context)
+
+    async def _cancellation_back_to_child(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("absence", {})
+        data.pop("phone", None)
+        return await self._absence_prompt_child(update, context)
+
+    async def _cancellation_collect_phone(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._cancellation_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._cancellation_back_to_contact(update, context)
+
+        data = context.user_data.setdefault("absence", {})
+        data["phone"] = text
+        return await self._absence_prompt_reason(update, context)
+
+    async def _cancellation_back_to_phone(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("absence", {})
+        data.pop("reason", None)
+        return await self._absence_prompt_phone(update, context)
 
     async def _cancellation_collect_reason(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        data = context.user_data.setdefault("cancellation", {})
-        text, attachments = self._extract_message_payload(update.message)
+        text, _ = self._extract_message_payload(update.message)
 
         if text == self.MAIN_MENU_BUTTON:
             return await self._cancellation_cancel(update, context)
         if text == self.BACK_BUTTON:
-            options: dict[str, dict[str, Any]] = data.get("options", {})  # type: ignore[assignment]
-            return await self._cancellation_restart_program(update, context, options)
+            return await self._cancellation_back_to_phone(update, context)
 
-        if attachments:
-            data["evidence"] = self._attachments_to_dicts(attachments)
-        data["details"] = text or ""
-
-        await self._store_cancellation(update, context, data, attachments or None)
-        context.user_data.pop("cancellation", None)
+        data = context.user_data.setdefault("absence", {})
+        data["reason"] = text or ""
 
         confirmation = (
-            "✅ Отмена зафиксирована.\n"
-            "ℹ️ Средства за пропущенное занятие не возвращаются, но мы учли ваш комментарий."
+            "✅ Спасибо! Мы зафиксировали отсутствие.\n"
+            "⚠️ Средства за пропущенное занятие не возвращаются — они остаются на балансе студии."
         )
         await self._reply(
             update,
             confirmation,
             reply_markup=self._main_menu_markup_for(update, context),
         )
+
+        admin_message = (
+            "🚨 Сообщение об отсутствии\n"
+            f"📚 Направление: {data.get('program', '—')}\n"
+            f"👤 Контакт: {data.get('contact_name', '—')}\n"
+            f"👦 Ребёнок: {data.get('child_name', '—')}\n"
+            f"📞 Телефон: {data.get('phone', '—')}\n"
+            f"📝 Причина: {data.get('reason', '—')}"
+        )
+        await self._notify_admins(
+            context,
+            admin_message,
+        )
+
+        context.user_data.pop("absence", None)
         await self._show_main_menu(update, context)
         return ConversationHandler.END
 
     async def _cancellation_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        context.user_data.pop("cancellation", None)
+        context.user_data.pop("absence", None)
         await self._reply(
             update,
-            "Отмена занятия не отправлена.",
+            "Сообщение об отсутствии не отправлено.",
             reply_markup=self._main_menu_markup_for(update, context),
         )
         return ConversationHandler.END
@@ -4416,7 +4433,7 @@ class ConfettiTelegramBot:
             "ℹ️ О студии": self._send_about,
             "👩‍🏫 Преподаватели": self._send_teachers,
             "📞 Контакты": self._send_contacts,
-            "📚 Полезные слова": self._send_vocabulary,
+            "📚 Слово дня": self._send_vocabulary,
         }
 
         handler = handlers.get(text)
