@@ -345,7 +345,6 @@ class ConfettiTelegramBot:
     ADMIN_EDIT_SCHEDULE_BUTTON = "🗓 Редактировать расписание"
     ADMIN_EDIT_ABOUT_BUTTON = "ℹ️ Редактировать информацию"
     ADMIN_EDIT_TEACHERS_BUTTON = "👩‍🏫 Редактировать преподавателей"
-    ADMIN_EDIT_ALBUM_BUTTON = "📸 Редактировать фотоальбом"
     ADMIN_EDIT_CONTACTS_BUTTON = "📞 Редактировать контакты"
     ADMIN_EDIT_VOCABULARY_BUTTON = "📚 Редактировать словарь"
     ADMIN_CANCEL_KEYWORDS = ("отмена", "annuler", "cancel")
@@ -380,78 +379,79 @@ class ConfettiTelegramBot:
         ("📚 Слово дня", CANCELLATION_BUTTON),
     )
 
-    PROGRAMS = (
+    DEFAULT_PROGRAMS: tuple[dict[str, str], ...] = (
         {
-            "label": "📚 Веселый французский",
-            "audience": "С 3 по 11 класс",
-            "description": (
-                "Интенсивная языковая практика. Ученики погружаются "
-                "в язык через общение, игры и проекты, закрепляя школьную программу "
-                "и расширяя словарный запас."
+            "id": "prog-french",
+            "title": "📚 Веселый французский",
+            "body": (
+                "Интенсивная языковая практика. Ученики погружаются в язык через"
+                " общение, игры и проекты, закрепляя школьную программу и"
+                " расширяя словарный запас.\n\n"
+                "С 3 по 11 класс."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/kazd.png",
+            "code": "french",
         },
         {
-            "label": "🎭 Театр на французском",
-            "description": (
-                "Театральная студия для тех, кто любит сцену и французский язык. "
-                "Готовим постановки, работаем над произношением и учимся импровизировать "
-                "на французском."
+            "id": "prog-theatre",
+            "title": "🎭 Театр на французском",
+            "body": (
+                "Театральная студия для тех, кто любит сцену и французский язык."
+                " Готовим постановки, работаем над произношением и учимся"
+                " импровизировать на французском."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/photo_2025-09-29_16-01-53(1).jpg",
         },
         {
-            "label": "🇫🇷 Французский по-взрослому",
-            "audience": "Группа для взрослых (продолжающие)",
-            "teacher": "Преподаватель: Красноборова Людмила Анатольевна",
-            "schedule": "Дни занятий: понедельник / четверг / пятница",
-            "description": (
-                "Курс для тех, кто уже влюблён во французский. Углубляем грамматику, "
-                "отрабатываем разговорные ситуации и готовимся к международным экзаменам."
+            "id": "prog-adults",
+            "title": "🇫🇷 Французский по-взрослому",
+            "body": (
+                "Курс для тех, кто уже влюблён во французский. Углубляем"
+                " грамматику, отрабатываем разговорные ситуации и готовимся к"
+                " международным экзаменам.\n\n"
+                "Дни занятий: понедельник / четверг / пятница."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/vzros.png",
         },
         {
-            "label": "👩🏼‍🏫 Индивидуальные занятия",
-            "audience": "Французский, английский и корейский языки",
-            "schedule": "График подбирается персонально",
-            "description": (
-                "Персональные уроки под ваши цели: подготовка к экзаменам, "
-                "разговорная практика или помощь по школе."
+            "id": "prog-individual",
+            "title": "👩🏼‍🏫 Индивидуальные занятия",
+            "body": (
+                "Персональные уроки под ваши цели: подготовка к экзаменам,"
+                " разговорная практика или помощь по школе.\n\n"
+                "Французский, английский и корейский языки."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/indidvid.png",
         },
         {
-            "label": "🍂 Интенсивы в каникулы",
-            "audience": "Краткосрочная программа",
-            "schedule": "Сезонные смены, даты объявляются дополнительно",
-            "description": (
-                "Погружение в язык на время каникул: отличная возможность повторить "
-                "важные темы и сделать большой шаг в изучении французского. Занятия каждый "
-                "день по 60 минут оффлайн и онлайн в мини группах и стандартных группах. "
-                "Программа построена в соответствии со школьной."
+            "id": "prog-camps",
+            "title": "🍂 Интенсивы в каникулы",
+            "body": (
+                "Погружение в язык на время каникул — отличная возможность"
+                " повторить важные темы и сделать большой шаг в изучении"
+                " французского. Занятия каждый день по 60 минут офлайн и онлайн"
+                " в мини и стандартных группах. Программа построена в"
+                " соответствии со школьной."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/osen.png",
         },
         {
-            "label": "🇰🇷 Корейский для подростков",
-            "audience": "Краткосрочная программа",
-            "schedule": "Сезонные смены, даты объявляются дополнительно",
-            "description": (
-                "Данный курс - это увлекательное путешествие в мир языка и культуры "
-                "K-pop, сериалов и современных трендов. Ребята учатся говорить, писать "
-                "и понимать живой корейский в дружеской атмосфере."
+            "id": "prog-korean-teens",
+            "title": "🇰🇷 Корейский для подростков",
+            "body": (
+                "Погружаемся в язык и культуру K-pop, сериалов и современных"
+                " трендов. Учимся говорить, писать и понимать живой корейский в"
+                " дружеской атмосфере."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/20251013_1759_%D0%92%D0%B5%D1%81%D1%91%D0%BB%D0%B0%D1%8F%20%D1%8F%D0%B7%D1%8B%D0%BA%D0%BE%D0%B2%D0%B0%D1%8F%20%D1%88%D0%BA%D0%BE%D0%BB%D0%B0_simple_compose_01k7etc95tfker7vx0btdsps6m.png",
         },
         {
-            "label": "🗣️ Языковой клуб",
-            "audience": "Краткосрочная программа",
-            "schedule": "Сезонные смены, даты объявляются дополнительно",
-            "description": (
-                "Языковой клуб — это живое общение с носителем на актуальные темы. "
-                "Практикуем разговорную речь, учимся выражать мнение и обсуждать всё, "
-                "что действительно интересно."
+            "id": "prog-club",
+            "title": "🗣️ Языковой клуб",
+            "body": (
+                "Живое общение с носителем на актуальные темы. Практикуем"
+                " разговорную речь, учимся выражать мнение и обсуждать всё, что"
+                " действительно интересно."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/20251002_1805_%D0%A3%D1%80%D0%BE%D0%BA%D0%B8%20%D1%84%D1%80%D0%B0%D0%BD%D1%86%D1%83%D0%B7%D1%81%D0%BA%D0%BE%D0%B3%D0%BE%20%D1%8F%D0%B7%D1%8B%D0%BA%D0%B0_simple_compose_01k6jgb8aqet48evvgkw40f90a.png",
         },
@@ -481,53 +481,63 @@ class ConfettiTelegramBot:
         },
     )
 
-    TEACHERS = (
+    DEFAULT_TEACHERS: tuple[dict[str, str], ...] = (
         {
-            "key": "nastytsch",
+            "id": "teacher-nastytsch",
             "name": "Ксения Настыч",
-            "description": (
-                "Преподаватель французского языка с опытом более 20 лет. "
-                "Окончила Пермский государственный университет по специальности "
-                "«Филология» и имеет международный сертификат DALF. "
-                "Регулярно стажировалась во Франции и организовывала «русские сезоны» в Посольстве России."
+            "bio": (
+                "Преподаватель французского языка с опытом более 20 лет."
+                " Окончила Пермский государственный университет по"
+                " специальности «Филология» и имеет международный сертификат"
+                " DALF. Регулярно стажировалась во Франции и организовывала"
+                " «русские сезоны» в Посольстве России."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/nastych.jpg",
         },
         {
-            "key": "bannikova",
+            "id": "teacher-bannikova",
             "name": "Анастасия Банникова",
-            "description": (
-                "Ведёт воскресные программы и театральные занятия. "
-                "Выпускница Пермского государственного университета, стажировалась во Франции (Университет Гренобль-Альпы), имеет международный диплом DALF C1. Её стиль — дисциплина и порядок: дети учатся работать системно и добиваются стабильных результатов уже в первый год."
+            "bio": (
+                "Ведёт воскресные программы и театральные занятия. Выпускница"
+                " Пермского государственного университета, стажировалась во"
+                " Франции (Университет Гренобль-Альпы), имеет международный"
+                " диплом DALF C1. Её стиль — дисциплина и порядок: дети"
+                " учатся работать системно и добиваются стабильных результатов"
+                " уже в первый год."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/bannikova.jpg",
         },
         {
-            "key": "marinot",
+            "id": "teacher-marinot",
             "name": "Ален Марино",
-            "description": (
-                "Носитель французского языка с академическим парижским акцентом. "
-                "Актёр и душа студии, который общается с учениками только по-французски и погружает в живую культуру."
+            "bio": (
+                "Носитель французского языка с академическим парижским"
+                " акцентом. Актёр и душа студии, который общается с учениками"
+                " только по-французски и погружает в живую культуру."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/marinot.jpg",
         },
         {
-            "key": "krasnoborova",
+            "id": "teacher-krasnoborova",
             "name": "Людмила Красноборова",
-            "description": (
-                "Кандидат филологических наук, доцент ПГНИУ и экзаменатор DALF. "
-                "Готовит подростков и взрослых к экзаменам и олимпиадам, сочетая академизм и практику."
+            "bio": (
+                "Кандидат филологических наук, доцент ПГНИУ и экзаменатор DALF."
+                " Готовит подростков и взрослых к экзаменам и олимпиадам,"
+                " сочетая академизм и практику."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/lydmila.jpg",
         },
         {
-            "key": "vshivkova",
+            "id": "teacher-vshivkova",
             "name": "Ксения Вшивкова",
-            "description": (
-                "Владеет французским, английским и корейским языками. Студентка ПГНИУ (2021–2026), "
-                "факультет современного иностранных языков и литератур по направлению «Перевод и переводоведение». "
-                "Работает с детьми более четырёх лет. Ведёт групповые занятия по французскому и корейскому, "
-                "а также индивидуальные уроки по французскому, английскому и корейскому языкам."
+            "bio": (
+                "Владеет французским, английским и корейским языками."
+                " Студентка ПГНИУ (2021–2026), факультет современных иностранных"
+                " языков и литератур по направлению «Перевод и"
+                " переводоведение». Работает с детьми более четырёх лет."
+                " Ведёт групповые занятия по французскому и корейскому, а"
+                " также индивидуальные уроки по французскому, английскому и"
+                " корейскому языкам."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/vshyk.jpg",
         },
@@ -611,6 +621,8 @@ class ConfettiTelegramBot:
         self._persistent_store: dict[str, Any] = self._load_persistent_state()
         self._ensure_registration_ids()
         self._ensure_payment_ids()
+        self._ensure_program_catalog()
+        self._ensure_teacher_directory()
         dynamic_admins = self._persistent_store.get("dynamic_admins")
         if isinstance(dynamic_admins, set):
             self._runtime_admin_ids.update(dynamic_admins)
@@ -683,6 +695,194 @@ class ConfettiTelegramBot:
             entry["attachments"] = cleaned
         if dirty:
             self._save_persistent_state()
+
+    def _generate_catalog_identifier(self, prefix: str, existing: set[str]) -> str:
+        while True:
+            candidate = f"{prefix}-{random.randint(100000, 999999)}"
+            if candidate not in existing:
+                return candidate
+
+    def _normalise_program_entry(
+        self, item: Any, existing_ids: set[str]
+    ) -> tuple[Optional[dict[str, Any]], bool]:
+        dirty = False
+        if not isinstance(item, dict):
+            return None, dirty
+
+        title_candidate = item.get("title") or item.get("label") or ""
+        title = str(title_candidate).strip()
+        if not title:
+            return None, dirty
+
+        identifier_candidate = str(item.get("id") or item.get("key") or "").strip()
+        if not identifier_candidate or identifier_candidate in existing_ids:
+            identifier_candidate = self._generate_catalog_identifier("prog", existing_ids)
+            dirty = True
+
+        body_parts: list[str] = []
+        body_value = item.get("body")
+        if isinstance(body_value, str) and body_value.strip():
+            body_parts.append(body_value.strip())
+        description = item.get("description")
+        if isinstance(description, str) and description.strip() and description.strip() not in body_parts:
+            if body_parts:
+                body_parts.append("")
+            body_parts.append(description.strip())
+
+        extras: list[str] = []
+        for field in ("audience", "teacher", "schedule"):
+            value = item.get(field)
+            if isinstance(value, str) and value.strip():
+                extras.append(value.strip())
+        if extras:
+            if body_parts:
+                body_parts.append("")
+            body_parts.extend(extras)
+
+        if not body_parts:
+            body_parts.append(title)
+
+        photo_file_id = str(item.get("photo_file_id", "") or "").strip()
+        photo_url = str(item.get("photo_url", "") or "").strip()
+        code = str(item.get("code", "") or "").strip()
+
+        entry = {
+            "id": identifier_candidate,
+            "title": title,
+            "body": "\n".join(body_parts).strip(),
+            "photo_file_id": photo_file_id,
+            "photo_url": photo_url,
+            "code": code,
+        }
+        return entry, dirty
+
+    def _ensure_program_catalog(self) -> None:
+        programs_raw = self._persistent_store.get("programs")
+        normalized: list[dict[str, Any]] = []
+        dirty = False
+        existing_ids: set[str] = set()
+
+        if isinstance(programs_raw, list):
+            for item in programs_raw:
+                entry, entry_dirty = self._normalise_program_entry(item, existing_ids)
+                if entry is None:
+                    continue
+                if not entry.get("photo_file_id"):
+                    entry["photo_file_id"] = ""
+                if not entry.get("photo_url"):
+                    entry["photo_url"] = ""
+                normalized.append(entry)
+                existing_ids.add(entry["id"])
+                if entry_dirty:
+                    dirty = True
+
+        if not normalized:
+            normalized = [
+                {
+                    "id": item.get("id", self._generate_catalog_identifier("prog", existing_ids)),
+                    "title": item.get("title", ""),
+                    "body": item.get("body", ""),
+                    "photo_file_id": item.get("photo_file_id", ""),
+                    "photo_url": item.get("photo_url", ""),
+                    "code": item.get("code", ""),
+                }
+                for item in self.DEFAULT_PROGRAMS
+            ]
+            for entry in normalized:
+                existing_ids.add(entry["id"])
+            dirty = True
+
+        self._persistent_store["programs"] = normalized
+        if dirty:
+            self._save_persistent_state()
+
+    def _normalise_teacher_entry(
+        self, item: Any, existing_ids: set[str]
+    ) -> tuple[Optional[dict[str, Any]], bool]:
+        dirty = False
+        if not isinstance(item, dict):
+            return None, dirty
+
+        name_candidate = item.get("name") or ""
+        name = str(name_candidate).strip()
+        if not name:
+            return None, dirty
+
+        identifier_candidate = str(item.get("id") or item.get("key") or "").strip()
+        if not identifier_candidate or identifier_candidate in existing_ids:
+            identifier_candidate = self._generate_catalog_identifier("teacher", existing_ids)
+            dirty = True
+
+        bio_parts: list[str] = []
+        for field in ("bio", "description"):
+            value = item.get(field)
+            if isinstance(value, str) and value.strip():
+                bio_parts.append(value.strip())
+        if not bio_parts:
+            bio_parts.append(name)
+
+        photo_file_id = str(item.get("photo_file_id", "") or "").strip()
+        photo_url = str(item.get("photo_url", "") or "").strip()
+
+        entry = {
+            "id": identifier_candidate,
+            "name": name,
+            "bio": "\n".join(bio_parts).strip(),
+            "photo_file_id": photo_file_id,
+            "photo_url": photo_url,
+        }
+        return entry, dirty
+
+    def _ensure_teacher_directory(self) -> None:
+        teachers_raw = self._persistent_store.get("teachers")
+        normalized: list[dict[str, Any]] = []
+        dirty = False
+        existing_ids: set[str] = set()
+
+        if isinstance(teachers_raw, list):
+            for item in teachers_raw:
+                entry, entry_dirty = self._normalise_teacher_entry(item, existing_ids)
+                if entry is None:
+                    continue
+                if not entry.get("photo_file_id"):
+                    entry["photo_file_id"] = ""
+                if not entry.get("photo_url"):
+                    entry["photo_url"] = ""
+                normalized.append(entry)
+                existing_ids.add(entry["id"])
+                if entry_dirty:
+                    dirty = True
+
+        if not normalized:
+            normalized = [
+                {
+                    "id": item.get("id", self._generate_catalog_identifier("teacher", existing_ids)),
+                    "name": item.get("name", ""),
+                    "bio": item.get("bio", ""),
+                    "photo_file_id": item.get("photo_file_id", ""),
+                    "photo_url": item.get("photo_url", ""),
+                }
+                for item in self.DEFAULT_TEACHERS
+            ]
+            for entry in normalized:
+                existing_ids.add(entry["id"])
+            dirty = True
+
+        self._persistent_store["teachers"] = normalized
+        if dirty:
+            self._save_persistent_state()
+
+    def _program_catalog(self) -> list[dict[str, Any]]:
+        programs = self._persistent_store.get("programs")
+        if isinstance(programs, list):
+            return programs
+        return []
+
+    def _teacher_directory(self) -> list[dict[str, Any]]:
+        teachers = self._persistent_store.get("teachers")
+        if isinstance(teachers, list):
+            return teachers
+        return []
 
     def _generate_registration_id(self) -> str:
         while True:
@@ -1528,6 +1728,8 @@ class ConfettiTelegramBot:
         application.add_handler(cancellation)
         application.add_handler(CallbackQueryHandler(self._about_show_direction, pattern=r"^about:"))
         application.add_handler(CallbackQueryHandler(self._teacher_show_profile, pattern=r"^teacher:"))
+        application.add_handler(CallbackQueryHandler(self._admin_about_callback, pattern=r"^admin_about:"))
+        application.add_handler(CallbackQueryHandler(self._admin_teacher_callback, pattern=r"^admin_teacher:"))
         application.add_handler(MessageHandler(~filters.COMMAND, self._handle_message))
 
     def _exact_match_regex(self, text: str) -> str:
@@ -1555,7 +1757,6 @@ class ConfettiTelegramBot:
             [self.ADMIN_EDIT_SCHEDULE_BUTTON],
             [self.ADMIN_EDIT_ABOUT_BUTTON],
             [self.ADMIN_EDIT_TEACHERS_BUTTON],
-            [self.ADMIN_EDIT_ALBUM_BUTTON],
             [self.ADMIN_EDIT_CONTACTS_BUTTON],
             [self.ADMIN_EDIT_VOCABULARY_BUTTON],
         ]
@@ -1721,13 +1922,11 @@ class ConfettiTelegramBot:
         chat = update.effective_chat
         user = update.effective_user
         record_id = data.get("id") or self._generate_registration_id()
-        program_label = data.get("program", "")
-        teacher = data.get("teacher") or self._resolve_program_teacher(str(program_label))
+        program_label = str(data.get("program", ""))
 
         record = {
             "id": record_id,
             "program": program_label,
-            "teacher": teacher,
             "child_name": data.get("child_name", ""),
             "school": data.get("school", ""),
             "class": data.get("class", ""),
@@ -2058,6 +2257,16 @@ class ConfettiTelegramBot:
         if isinstance(file_value, str) and file_value.strip():
             return file_value.strip()
 
+    def _select_photo_file_id(
+        self, attachments: Sequence[MediaAttachment]
+    ) -> Optional[str]:
+        for attachment in attachments:
+            if not isinstance(attachment, MediaAttachment):
+                continue
+            if attachment.kind == "photo" and attachment.file_id:
+                return attachment.file_id
+        return None
+
         return None
 
     async def _reply(
@@ -2382,6 +2591,14 @@ class ConfettiTelegramBot:
         self._remember_chat(update, context)
         await self._purge_expired_registrations(context)
         context.user_data["registration"] = {}
+        if not self._program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("registration", None)
+            return ConversationHandler.END
         await self._reply(
             update,
             self._registration_program_prompt(),
@@ -2391,11 +2608,20 @@ class ConfettiTelegramBot:
         return self.REGISTRATION_PROGRAM
 
     def _program_inline_keyboard(self) -> "InlineKeyboardMarkup":
+        programs = self._program_catalog()
         buttons = [
-            [InlineKeyboardButton(program["label"], callback_data=f"reg_program:{index}")]
-            for index, program in enumerate(self.PROGRAMS)
+            [
+                InlineKeyboardButton(
+                    program.get("title", f"Направление {index + 1}"),
+                    callback_data=f"reg_program:{index}",
+                )
+            ]
+            for index, program in enumerate(programs)
         ]
-        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_back:menu")])
+        if buttons:
+            buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_back:menu")])
+        else:
+            buttons = [[InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_back:menu")]]
         return InlineKeyboardMarkup(buttons)
 
     def _french_variant_keyboard(self) -> "InlineKeyboardMarkup":
@@ -2407,40 +2633,58 @@ class ConfettiTelegramBot:
         return InlineKeyboardMarkup(buttons)
 
     def _about_inline_keyboard(self) -> "InlineKeyboardMarkup":
+        programs = self._program_catalog()
         buttons = [
-            [InlineKeyboardButton(program["label"], callback_data=f"about:{index}")]
-            for index, program in enumerate(self.PROGRAMS)
+            [
+                InlineKeyboardButton(
+                    program.get("title", f"Направление {index + 1}"),
+                    callback_data=f"about:{index}",
+                )
+            ]
+            for index, program in enumerate(programs)
         ]
+        if not buttons:
+            buttons = [[InlineKeyboardButton(self.BACK_BUTTON, callback_data="about:back")]]
         return InlineKeyboardMarkup(buttons)
 
     def _teacher_inline_keyboard(self) -> "InlineKeyboardMarkup":
+        teachers = self._teacher_directory()
         buttons = [
-            [InlineKeyboardButton(teacher["name"], callback_data=f"teacher:{teacher['key']}")]
-            for teacher in self.TEACHERS
+            [
+                InlineKeyboardButton(
+                    teacher.get("name", f"Педагог {index + 1}"),
+                    callback_data=f"teacher:{teacher['id']}",
+                )
+            ]
+            for index, teacher in enumerate(teachers)
         ]
+        if not buttons:
+            buttons = [[InlineKeyboardButton(self.BACK_BUTTON, callback_data="teacher:back")]]
         return InlineKeyboardMarkup(buttons)
 
-    def _format_program_details(self, program: Dict[str, str]) -> str:
-        lines = [program["label"]]
-        description = program.get("description")
-        if description:
-            lines.append("")
-            lines.append(description)
-        for key in ("audience", "teacher", "schedule"):
-            value = program.get(key)
-            if value:
-                lines.append(value)
-        return "\n".join(line for line in lines if line is not None)
-
-    def _resolve_program_teacher(self, program_label: str) -> str:
-        for program in self.PROGRAMS:
-            if program.get("label") == program_label:
-                return program.get("teacher", "") or ""
-        return ""
+    def _format_program_details(self, program: Dict[str, Any]) -> str:
+        title = str(program.get("title", ""))
+        body = str(program.get("body", ""))
+        lines: list[str] = []
+        if title:
+            lines.append(title)
+        if body.strip():
+            if lines:
+                lines.append("")
+            lines.append(body.strip())
+        return "\n".join(lines).strip()
 
     async def _registration_prompt_program_buttons(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
+        if not self._program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("registration", None)
+            return ConversationHandler.END
         await self._reply(
             update,
             self._registration_program_prompt(),
@@ -2488,7 +2732,8 @@ class ConfettiTelegramBot:
 
         program_label = ""
         details = ""
-        selected_program: Optional[dict[str, str]] = None
+        programs = self._program_catalog()
+        selected_program: Optional[dict[str, Any]] = None
         if query is not None:
             data = query.data or ""
             try:
@@ -2496,16 +2741,19 @@ class ConfettiTelegramBot:
             except (IndexError, ValueError):
                 await query.answer("Не удалось определить программу.", show_alert=True)
                 return self.REGISTRATION_PROGRAM
-            if not 0 <= index < len(self.PROGRAMS):
+            if not 0 <= index < len(programs):
                 await query.answer("Программа недоступна.", show_alert=True)
                 return self.REGISTRATION_PROGRAM
-            program = self.PROGRAMS[index]
+            program = programs[index]
             await query.answer()
-            program_label = program["label"]
+            program_label = str(program.get("title", ""))
             selected_program = program
         else:
             program_label = (message.text if message else "").strip()
-            program = next((item for item in self.PROGRAMS if item["label"] == program_label), None)
+            program = next(
+                (item for item in programs if str(item.get("title", "")).strip() == program_label),
+                None,
+            )
             if not program:
                 await self._registration_prompt_program_buttons(update, context)
                 return self.REGISTRATION_PROGRAM
@@ -2516,14 +2764,12 @@ class ConfettiTelegramBot:
             await self._reply(update, f"Вы выбрали программу:\n{details}")
 
         registration = context.user_data.setdefault("registration", {})
-        teacher = (selected_program or {}).get("teacher") or self._resolve_program_teacher(program_label)
-        if teacher:
-            registration["teacher"] = teacher
-        else:
-            registration.pop("teacher", None)
+        registration.pop("teacher", None)
+
+        program_code = str((selected_program or {}).get("code", ""))
 
         if (
-            program_label == self.FRENCH_PROGRAM_LABEL
+            (program_code == "french" or program_label == self.FRENCH_PROGRAM_LABEL)
             and len(self.FRENCH_PROGRAM_VARIANTS) > 0
         ):
             registration["program_base"] = program_label
@@ -2575,11 +2821,6 @@ class ConfettiTelegramBot:
         registration = context.user_data.setdefault("registration", {})
         registration["program"] = option["stored"]
         registration.pop("program_base", None)
-
-        if not registration.get("teacher"):
-            teacher = self._resolve_program_teacher(self.FRENCH_PROGRAM_LABEL)
-            if teacher:
-                registration["teacher"] = teacher
 
         await self._reply(
             update,
@@ -2860,9 +3101,15 @@ class ConfettiTelegramBot:
         )
 
     def _absence_program_keyboard(self) -> "InlineKeyboardMarkup":
+        programs = self._program_catalog()
         buttons = [
-            [InlineKeyboardButton(program["label"], callback_data=f"absence_program:{index}")]
-            for index, program in enumerate(self.PROGRAMS)
+            [
+                InlineKeyboardButton(
+                    program.get("title", f"Направление {index + 1}"),
+                    callback_data=f"absence_program:{index}",
+                )
+            ]
+            for index, program in enumerate(programs)
         ]
         buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="absence_back:menu")])
         return InlineKeyboardMarkup(buttons)
@@ -2941,9 +3188,15 @@ class ConfettiTelegramBot:
         )
 
     def _payment_program_keyboard(self) -> "InlineKeyboardMarkup":
+        programs = self._program_catalog()
         buttons = [
-            [InlineKeyboardButton(program["label"], callback_data=f"pay_program:{index}")]
-            for index, program in enumerate(self.PROGRAMS)
+            [
+                InlineKeyboardButton(
+                    program.get("title", f"Направление {index + 1}"),
+                    callback_data=f"pay_program:{index}",
+                )
+            ]
+            for index, program in enumerate(programs)
         ]
         buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="pay_back:menu")])
         return InlineKeyboardMarkup(buttons)
@@ -2953,6 +3206,14 @@ class ConfettiTelegramBot:
     ) -> int:
         self._remember_chat(update, context)
         context.user_data["payment_report"] = {}
+        if not self._program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("payment_report", None)
+            return ConversationHandler.END
         await self._reply(
             update,
             self._payment_report_intro(),
@@ -2963,6 +3224,14 @@ class ConfettiTelegramBot:
     async def _payment_report_prompt_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
+        if not self._program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("payment_report", None)
+            return ConversationHandler.END
         await self._reply(
             update,
             self._payment_report_intro(),
@@ -2985,11 +3254,12 @@ class ConfettiTelegramBot:
             await query.answer("Не удалось определить направление.", show_alert=True)
             return self.PAYMENT_REPORT_PROGRAM
 
-        if not 0 <= index < len(self.PROGRAMS):
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
             await query.answer("Направление недоступно.", show_alert=True)
             return self.PAYMENT_REPORT_PROGRAM
 
-        program = self.PROGRAMS[index]
+        program = programs[index]
         await query.answer()
         details = self._format_program_details(program)
         try:  # pragma: no cover - depends on telegram runtime
@@ -3001,7 +3271,7 @@ class ConfettiTelegramBot:
                 pass
             await self._reply(update, f"Вы выбрали направление:\n{details}")
 
-        context.user_data.setdefault("payment_report", {})["program"] = program["label"]
+        context.user_data.setdefault("payment_report", {})["program"] = str(program.get("title", ""))
         return await self._payment_report_prompt_name(update, context)
 
     async def _payment_report_cancel_from_program(
@@ -3168,6 +3438,14 @@ class ConfettiTelegramBot:
     async def _start_cancellation(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         self._remember_chat(update, context)
         context.user_data["absence"] = {}
+        if not self._program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("absence", None)
+            return ConversationHandler.END
         await self._reply(
             update,
             self._absence_intro(),
@@ -3178,6 +3456,14 @@ class ConfettiTelegramBot:
     async def _cancellation_prompt_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
+        if not self._program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("absence", None)
+            return ConversationHandler.END
         await self._reply(
             update,
             self._absence_intro(),
@@ -3196,13 +3482,14 @@ class ConfettiTelegramBot:
             index = int(query.data.split(":", 1)[1])
         except (IndexError, ValueError):
             return await self._cancellation_prompt_program(update, context)
-        if not 0 <= index < len(self.PROGRAMS):
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
             return await self._cancellation_prompt_program(update, context)
 
-        program = self.PROGRAMS[index]
+        program = programs[index]
         data = context.user_data.setdefault("absence", {})
         data.clear()
-        data["program"] = program["label"]
+        data["program"] = str(program.get("title", ""))
 
         return await self._absence_prompt_contact(update, context)
 
@@ -3342,8 +3629,6 @@ class ConfettiTelegramBot:
         contact = data.get("contact_name", "—")
         phone = data.get("phone", "—")
         comment = data.get("comment", "—")
-        teacher_line = data.get("teacher") or self._resolve_program_teacher(str(program))
-
         summary_lines = [
             "Заявка отправлена!",
             "",
@@ -3354,8 +3639,6 @@ class ConfettiTelegramBot:
             f"👤 Контактное лицо: {contact}",
             f"📱 Телефон: {phone}",
         ]
-        if teacher_line:
-            summary_lines.append(teacher_line)
         if comment and comment.strip():
             summary_lines.append(f"📝 Комментарий: {comment}")
         summary_lines.append("")
@@ -3377,13 +3660,918 @@ class ConfettiTelegramBot:
             f"👤 Контактное лицо: {contact}",
             f"📱 Телефон: {phone}",
         ]
-        if teacher_line:
-            admin_lines.append(teacher_line)
         if comment and comment.strip():
             admin_lines.append(f"📝 Комментарий: {comment}")
 
         await self._notify_admins(context, "\n".join(admin_lines))
         context.user_data.pop("registration", None)
+
+    async def _admin_show_about_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        notice: Optional[str] = None,
+        prefer_edit: bool = False,
+    ) -> None:
+        programs = self._program_catalog()
+        lines: list[str] = []
+        if notice:
+            lines.append(notice)
+            lines.append("")
+        lines.append("Управление разделом «О студии».")
+        if programs:
+            lines.append("Выберите действие, чтобы обновить вступление или направления.")
+        else:
+            lines.append("Список направлений пуст — добавьте новое направление.")
+        keyboard: list[list[InlineKeyboardButton]] = [
+            [InlineKeyboardButton("📝 Редактировать вступление", callback_data="admin_about:intro")],
+            [InlineKeyboardButton("➕ Добавить направление", callback_data="admin_about:add")],
+        ]
+        for index, program in enumerate(programs):
+            title = program.get("title") or f"Направление {index + 1}"
+            keyboard.append(
+                [InlineKeyboardButton(title, callback_data=f"admin_about:edit:{index}")]
+            )
+        keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data="admin_about:back")])
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            prefer_edit=prefer_edit or update.callback_query is not None,
+        )
+
+    async def _admin_show_program_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        notice: Optional[str] = None,
+        prefer_edit: bool = False,
+    ) -> None:
+        programs = self._program_catalog()
+        effective_prefer_edit = prefer_edit or update.callback_query is not None
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(
+                update,
+                context,
+                notice="Направление не найдено.",
+                prefer_edit=effective_prefer_edit,
+            )
+            return
+        program = programs[index]
+        title = program.get("title") or f"Направление {index + 1}"
+        body = str(program.get("body", ""))
+        if program.get("photo_file_id"):
+            photo_note = "Используется загруженное фото."
+        elif program.get("photo_url"):
+            photo_note = "Используется ссылка на фото."
+        else:
+            photo_note = "Фото не добавлено."
+        lines: list[str] = []
+        if notice:
+            lines.append(notice)
+            lines.append("")
+        lines.append(f"Название: {title or '—'}")
+        if body.strip():
+            lines.append("")
+            lines.append(body.strip())
+        else:
+            lines.append("")
+            lines.append("Описание пока не заполнено.")
+        lines.append("")
+        lines.append(f"📷 {photo_note}")
+        lines.append("")
+        lines.append("Выберите действие:")
+        keyboard = [
+            [InlineKeyboardButton("✏️ Изменить название", callback_data=f"admin_about:rename:{index}")],
+            [InlineKeyboardButton("📝 Обновить описание", callback_data=f"admin_about:body:{index}")],
+            [InlineKeyboardButton("🖼 Обновить фото", callback_data=f"admin_about:photo:{index}")],
+            [InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_about:delete:{index}")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="admin_about:menu")],
+        ]
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            prefer_edit=effective_prefer_edit,
+        )
+
+    async def _admin_prompt_add_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        context.chat_data["pending_admin_action"] = {"type": "add_program"}
+        message = (
+            "Отправьте новое направление.\n"
+            "Первая строка — название, далее описание.\n"
+            "Можно приложить одно фото."
+        )
+        await self._reply(
+            update,
+            message + self.ADMIN_CANCEL_PROMPT,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_program_rename(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return
+        title = programs[index].get("title") or f"Направление {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "rename_program",
+            "index": index,
+        }
+        message = (
+            f"Введите новое название для направления «{title}»."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_program_body(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return
+        title = programs[index].get("title") or f"Направление {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "program_body",
+            "index": index,
+        }
+        message = (
+            f"Отправьте новый текст для направления «{title}».\n"
+            "Чтобы очистить описание, напишите «Удалить»."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_program_photo(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return
+        title = programs[index].get("title") or f"Направление {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "program_photo",
+            "index": index,
+        }
+        message = (
+            f"Пришлите новое фото для направления «{title}».\n"
+            "Чтобы удалить изображение, напишите «Удалить».\n"
+            "Можно отправить ссылку (http…)."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_add_program(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        text: str,
+        attachments: list[MediaAttachment],
+    ) -> bool:
+        trimmed = text.strip()
+        if not trimmed:
+            await self._reply(
+                update,
+                "Пожалуйста, укажите название направления.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        lines = [line.strip() for line in trimmed.splitlines()]
+        title = lines[0]
+        if not title:
+            await self._reply(
+                update,
+                "Название не может быть пустым.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        body = "\n".join(line for line in lines[1:] if line).strip()
+        programs = self._program_catalog()
+        existing_ids = {
+            str(item.get("id", ""))
+            for item in programs
+            if isinstance(item, dict) and item.get("id")
+        }
+        new_id = self._generate_catalog_identifier("prog", existing_ids)
+        photo_file_id = self._select_photo_file_id(attachments)
+        programs.append(
+            {
+                "id": new_id,
+                "title": title,
+                "body": body,
+                "photo_file_id": photo_file_id or "",
+                "photo_url": "",
+                "code": "",
+            }
+        )
+        self._save_persistent_state()
+        await self._admin_show_about_menu(
+            update,
+            context,
+            notice=f"Направление «{title}» добавлено.",
+        )
+        return True
+
+    async def _admin_rename_program(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+    ) -> bool:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return True
+        trimmed = text.strip()
+        if not trimmed:
+            await self._reply(
+                update,
+                "Название не может быть пустым.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        programs[index]["title"] = trimmed
+        self._save_persistent_state()
+        await self._admin_show_program_detail(
+            update,
+            context,
+            index,
+            notice="Название обновлено.",
+        )
+        return True
+
+    async def _admin_update_program_body(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+    ) -> bool:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return True
+        trimmed = text.strip()
+        lower = trimmed.lower()
+        if trimmed and lower not in {"удалить", "нет", "очистить", "-"}:
+            programs[index]["body"] = trimmed
+            notice = "Описание обновлено."
+        elif lower in {"удалить", "нет", "очистить", "-"}:
+            programs[index]["body"] = ""
+            notice = "Описание очищено."
+        else:
+            await self._reply(
+                update,
+                "Отправьте текст описания или напишите «Удалить».",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        self._save_persistent_state()
+        await self._admin_show_program_detail(
+            update,
+            context,
+            index,
+            notice=notice,
+        )
+        return True
+
+    async def _admin_update_program_photo(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+        attachments: list[MediaAttachment],
+    ) -> bool:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return True
+        program = programs[index]
+        trimmed = text.strip()
+        lower = trimmed.lower()
+        photo_file_id = self._select_photo_file_id(attachments)
+        notice: str
+        if photo_file_id:
+            program["photo_file_id"] = photo_file_id
+            program["photo_url"] = ""
+            notice = "Фото обновлено."
+        elif trimmed.startswith("http"):
+            program["photo_file_id"] = ""
+            program["photo_url"] = trimmed
+            notice = "Ссылка на фото обновлена."
+        elif lower in {"удалить", "нет", "очистить", "-"}:
+            program["photo_file_id"] = ""
+            program["photo_url"] = ""
+            notice = "Фото удалено."
+        else:
+            await self._reply(
+                update,
+                "Пришлите фото, ссылку или напишите «Удалить».",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        self._save_persistent_state()
+        await self._admin_show_program_detail(
+            update,
+            context,
+            index,
+            notice=notice,
+        )
+        return True
+
+    async def _admin_delete_program(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+    ) -> None:
+        programs = self._program_catalog()
+        prefer_edit = update.callback_query is not None
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(
+                update,
+                context,
+                notice="Направление не найдено.",
+                prefer_edit=prefer_edit,
+            )
+            return
+        removed = programs.pop(index)
+        title = removed.get("title") or "Направление"
+        self._save_persistent_state()
+        await self._admin_show_about_menu(
+            update,
+            context,
+            notice=f"«{title}» удалено.",
+            prefer_edit=prefer_edit,
+        )
+
+    async def _admin_show_teachers_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        notice: Optional[str] = None,
+        prefer_edit: bool = False,
+    ) -> None:
+        teachers = self._teacher_directory()
+        lines: list[str] = []
+        if notice:
+            lines.append(notice)
+            lines.append("")
+        lines.append("Управление разделом «Преподаватели».")
+        if teachers:
+            lines.append("Выберите педагога для редактирования или добавьте нового.")
+        else:
+            lines.append("Список преподавателей пуст — добавьте новую запись.")
+        keyboard: list[list[InlineKeyboardButton]] = [
+            [InlineKeyboardButton("📝 Редактировать вступление", callback_data="admin_teacher:intro")],
+            [InlineKeyboardButton("➕ Добавить преподавателя", callback_data="admin_teacher:add")],
+        ]
+        for index, teacher in enumerate(teachers):
+            name = teacher.get("name") or f"Педагог {index + 1}"
+            keyboard.append(
+                [InlineKeyboardButton(name, callback_data=f"admin_teacher:edit:{index}")]
+            )
+        keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data="admin_teacher:back")])
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            prefer_edit=prefer_edit or update.callback_query is not None,
+        )
+
+    async def _admin_show_teacher_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        notice: Optional[str] = None,
+        prefer_edit: bool = False,
+    ) -> None:
+        teachers = self._teacher_directory()
+        effective_prefer_edit = prefer_edit or update.callback_query is not None
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(
+                update,
+                context,
+                notice="Преподаватель не найден.",
+                prefer_edit=effective_prefer_edit,
+            )
+            return
+        teacher = teachers[index]
+        name = teacher.get("name") or f"Педагог {index + 1}"
+        bio = str(teacher.get("bio", ""))
+        if teacher.get("photo_file_id"):
+            photo_note = "Используется загруженное фото."
+        elif teacher.get("photo_url"):
+            photo_note = "Используется ссылка на фото."
+        else:
+            photo_note = "Фото не добавлено."
+        lines: list[str] = []
+        if notice:
+            lines.append(notice)
+            lines.append("")
+        lines.append(f"Имя: {name}")
+        if bio.strip():
+            lines.append("")
+            lines.append(bio.strip())
+        else:
+            lines.append("")
+            lines.append("Описание пока не заполнено.")
+        lines.append("")
+        lines.append(f"📷 {photo_note}")
+        lines.append("")
+        lines.append("Выберите действие:")
+        keyboard = [
+            [InlineKeyboardButton("✏️ Изменить имя", callback_data=f"admin_teacher:rename:{index}")],
+            [InlineKeyboardButton("📝 Обновить описание", callback_data=f"admin_teacher:bio:{index}")],
+            [InlineKeyboardButton("🖼 Обновить фото", callback_data=f"admin_teacher:photo:{index}")],
+            [InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_teacher:delete:{index}")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="admin_teacher:menu")],
+        ]
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            prefer_edit=effective_prefer_edit,
+        )
+
+    async def _admin_prompt_add_teacher(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        context.chat_data["pending_admin_action"] = {"type": "add_teacher"}
+        message = (
+            "Отправьте информацию о новом преподавателе.\n"
+            "Первая строка — имя, далее описание.\n"
+            "Можно приложить фото."
+        )
+        await self._reply(
+            update,
+            message + self.ADMIN_CANCEL_PROMPT,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_teacher_rename(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return
+        name = teachers[index].get("name") or f"Педагог {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "rename_teacher",
+            "index": index,
+        }
+        message = (
+            f"Введите новое имя для преподавателя «{name}»."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_teacher_bio(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return
+        name = teachers[index].get("name") or f"Педагог {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "teacher_bio",
+            "index": index,
+        }
+        message = (
+            f"Отправьте новое описание для преподавателя «{name}».\n"
+            "Чтобы очистить описание, напишите «Удалить»."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_teacher_photo(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return
+        name = teachers[index].get("name") or f"Педагог {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "teacher_photo",
+            "index": index,
+        }
+        message = (
+            f"Пришлите новое фото для преподавателя «{name}».\n"
+            "Чтобы удалить изображение, напишите «Удалить».\n"
+            "Можно отправить ссылку (http…)."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_add_teacher(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        text: str,
+        attachments: list[MediaAttachment],
+    ) -> bool:
+        trimmed = text.strip()
+        if not trimmed:
+            await self._reply(
+                update,
+                "Пожалуйста, укажите имя преподавателя.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        lines = [line.strip() for line in trimmed.splitlines()]
+        name = lines[0]
+        if not name:
+            await self._reply(
+                update,
+                "Имя не может быть пустым.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        bio = "\n".join(line for line in lines[1:] if line).strip()
+        teachers = self._teacher_directory()
+        existing_ids = {
+            str(item.get("id", ""))
+            for item in teachers
+            if isinstance(item, dict) and item.get("id")
+        }
+        new_id = self._generate_catalog_identifier("teacher", existing_ids)
+        photo_file_id = self._select_photo_file_id(attachments)
+        teachers.append(
+            {
+                "id": new_id,
+                "name": name,
+                "bio": bio,
+                "photo_file_id": photo_file_id or "",
+                "photo_url": "",
+            }
+        )
+        self._save_persistent_state()
+        await self._admin_show_teachers_menu(
+            update,
+            context,
+            notice=f"Преподаватель «{name}» добавлен.",
+        )
+        return True
+
+    async def _admin_rename_teacher(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+    ) -> bool:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return True
+        trimmed = text.strip()
+        if not trimmed:
+            await self._reply(
+                update,
+                "Имя не может быть пустым.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        teachers[index]["name"] = trimmed
+        self._save_persistent_state()
+        await self._admin_show_teacher_detail(
+            update,
+            context,
+            index,
+            notice="Имя обновлено.",
+        )
+        return True
+
+    async def _admin_update_teacher_bio(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+    ) -> bool:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return True
+        trimmed = text.strip()
+        lower = trimmed.lower()
+        if trimmed and lower not in {"удалить", "нет", "очистить", "-"}:
+            teachers[index]["bio"] = trimmed
+            notice = "Описание обновлено."
+        elif lower in {"удалить", "нет", "очистить", "-"}:
+            teachers[index]["bio"] = ""
+            notice = "Описание очищено."
+        else:
+            await self._reply(
+                update,
+                "Отправьте текст описания или напишите «Удалить».",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        self._save_persistent_state()
+        await self._admin_show_teacher_detail(
+            update,
+            context,
+            index,
+            notice=notice,
+        )
+        return True
+
+    async def _admin_update_teacher_photo(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+        attachments: list[MediaAttachment],
+    ) -> bool:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return True
+        teacher = teachers[index]
+        trimmed = text.strip()
+        lower = trimmed.lower()
+        photo_file_id = self._select_photo_file_id(attachments)
+        notice: str
+        if photo_file_id:
+            teacher["photo_file_id"] = photo_file_id
+            teacher["photo_url"] = ""
+            notice = "Фото обновлено."
+        elif trimmed.startswith("http"):
+            teacher["photo_file_id"] = ""
+            teacher["photo_url"] = trimmed
+            notice = "Ссылка на фото обновлена."
+        elif lower in {"удалить", "нет", "очистить", "-"}:
+            teacher["photo_file_id"] = ""
+            teacher["photo_url"] = ""
+            notice = "Фото удалено."
+        else:
+            await self._reply(
+                update,
+                "Пришлите фото, ссылку или напишите «Удалить».",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        self._save_persistent_state()
+        await self._admin_show_teacher_detail(
+            update,
+            context,
+            index,
+            notice=notice,
+        )
+        return True
+
+    async def _admin_delete_teacher(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+    ) -> None:
+        teachers = self._teacher_directory()
+        prefer_edit = update.callback_query is not None
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(
+                update,
+                context,
+                notice="Преподаватель не найден.",
+                prefer_edit=prefer_edit,
+            )
+            return
+        removed = teachers.pop(index)
+        name = removed.get("name") or "Преподаватель"
+        self._save_persistent_state()
+        await self._admin_show_teachers_menu(
+            update,
+            context,
+            notice=f"«{name}» удалён.",
+            prefer_edit=prefer_edit,
+        )
+
+    async def _admin_about_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+        if not self._is_admin_update(update, context):
+            await query.answer("Недоступно.", show_alert=True)
+            return
+        parts = (query.data or "").split(":")
+        action = parts[1] if len(parts) > 1 else ""
+        argument = parts[2] if len(parts) > 2 else ""
+
+        def _parse_index(token: str) -> Optional[int]:
+            try:
+                return int(token)
+            except (TypeError, ValueError):
+                return None
+
+        if action == "intro":
+            await query.answer()
+            await self._prompt_admin_content_edit(
+                update,
+                context,
+                field="about",
+                instruction="Отправьте обновлённый блок «О студии» (текст, фото, видео)."
+                + self.ADMIN_CANCEL_PROMPT,
+            )
+            return
+        if action == "add":
+            await query.answer()
+            await self._admin_prompt_add_program(update, context)
+            return
+        if action == "edit":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось открыть направление.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_show_program_detail(update, context, index, prefer_edit=True)
+            return
+        if action == "rename":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить направление.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_program_rename(update, context, index)
+            return
+        if action == "body":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить направление.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_program_body(update, context, index)
+            return
+        if action == "photo":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить направление.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_program_photo(update, context, index)
+            return
+        if action == "delete":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить направление.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_delete_program(update, context, index)
+            return
+        if action == "menu":
+            await query.answer()
+            await self._admin_show_about_menu(update, context, prefer_edit=True)
+            return
+        if action == "back":
+            await query.answer()
+            await self._reply(
+                update,
+                "Выберите раздел админ-панели.",
+                reply_markup=self._admin_menu_markup(),
+                prefer_edit=True,
+            )
+            return
+        await query.answer("Действие недоступно.", show_alert=True)
+
+    async def _admin_teacher_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+        if not self._is_admin_update(update, context):
+            await query.answer("Недоступно.", show_alert=True)
+            return
+        parts = (query.data or "").split(":")
+        action = parts[1] if len(parts) > 1 else ""
+        argument = parts[2] if len(parts) > 2 else ""
+
+        def _parse_index(token: str) -> Optional[int]:
+            try:
+                return int(token)
+            except (TypeError, ValueError):
+                return None
+
+        if action == "intro":
+            await query.answer()
+            await self._prompt_admin_content_edit(
+                update,
+                context,
+                field="teachers",
+                instruction="Поделитесь новым описанием преподавателей и медиа."
+                + self.ADMIN_CANCEL_PROMPT,
+            )
+            return
+        if action == "add":
+            await query.answer()
+            await self._admin_prompt_add_teacher(update, context)
+            return
+        if action == "edit":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось открыть карточку преподавателя.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_show_teacher_detail(update, context, index, prefer_edit=True)
+            return
+        if action == "rename":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить преподавателя.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_teacher_rename(update, context, index)
+            return
+        if action == "bio":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить преподавателя.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_teacher_bio(update, context, index)
+            return
+        if action == "photo":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить преподавателя.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_teacher_photo(update, context, index)
+            return
+        if action == "delete":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить преподавателя.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_delete_teacher(update, context, index)
+            return
+        if action == "menu":
+            await query.answer()
+            await self._admin_show_teachers_menu(update, context, prefer_edit=True)
+            return
+        if action == "back":
+            await query.answer()
+            await self._reply(
+                update,
+                "Выберите раздел админ-панели.",
+                reply_markup=self._admin_menu_markup(),
+                prefer_edit=True,
+            )
+            return
+        await query.answer("Действие недоступно.", show_alert=True)
 
     # ------------------------------------------------------------------
     # Menu handlers
@@ -3477,31 +4665,12 @@ class ConfettiTelegramBot:
                 )
                 return
             if command_text == self.ADMIN_EDIT_ABOUT_BUTTON:
-                await self._prompt_admin_content_edit(
-                    update,
-                    context,
-                    field="about",
-                    instruction="Отправьте обновлённый блок «О студии» (текст, фото, видео)."
-                    + self.ADMIN_CANCEL_PROMPT,
-                )
+                context.chat_data.pop("pending_admin_action", None)
+                await self._admin_show_about_menu(update, context)
                 return
             if command_text == self.ADMIN_EDIT_TEACHERS_BUTTON:
-                await self._prompt_admin_content_edit(
-                    update,
-                    context,
-                    field="teachers",
-                    instruction="Поделитесь новым описанием преподавателей и медиа."
-                    + self.ADMIN_CANCEL_PROMPT,
-                )
-                return
-            if command_text == self.ADMIN_EDIT_ALBUM_BUTTON:
-                await self._prompt_admin_content_edit(
-                    update,
-                    context,
-                    field="album",
-                    instruction="Отправьте ссылку или материалы для фотоальбома."
-                    + self.ADMIN_CANCEL_PROMPT,
-                )
+                context.chat_data.pop("pending_admin_action", None)
+                await self._admin_show_teachers_menu(update, context)
                 return
             if command_text == self.ADMIN_EDIT_CONTACTS_BUTTON:
                 await self._prompt_admin_content_edit(
@@ -3556,6 +4725,72 @@ class ConfettiTelegramBot:
                     "Не удалось определить редактируемый блок.",
                     reply_markup=self._admin_menu_markup(),
                 )
+            return
+        if action_type == "add_program":
+            if await self._admin_add_program(update, context, text=text, attachments=attachments):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "rename_program":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_rename_program(update, context, index, text=text):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "program_body":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_update_program_body(update, context, index, text=text):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "program_photo":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_update_program_photo(
+                update,
+                context,
+                index,
+                text=text,
+                attachments=attachments,
+            ):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "add_teacher":
+            if await self._admin_add_teacher(update, context, text=text, attachments=attachments):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "rename_teacher":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_rename_teacher(update, context, index, text=text):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "teacher_bio":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_update_teacher_bio(update, context, index, text=text):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "teacher_photo":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_update_teacher_photo(
+                update,
+                context,
+                index,
+                text=text,
+                attachments=attachments,
+            ):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
             return
         if action_type == "manage_admins":
             await self._admin_manage_admins(update, context, text)
@@ -4679,13 +5914,26 @@ class ConfettiTelegramBot:
             await query.answer("Не удалось открыть профиль.", show_alert=True)
             return
         key = data[1]
-        teacher = next((item for item in self.TEACHERS if item["key"] == key), None)
+        if key == "back":
+            await query.answer()
+            await self._reply(
+                update,
+                "Список преподавателей обновляется.",
+                reply_markup=self._teacher_inline_keyboard(),
+                prefer_edit=True,
+            )
+            return
+
+        teachers = self._teacher_directory()
+        teacher = next((item for item in teachers if item.get("id") == key), None)
         if teacher is None:
             await query.answer("Педагог не найден.", show_alert=True)
             return
 
         await query.answer()
-        caption = f"{teacher['name']}\n\n{teacher['description']}"
+        name = teacher.get("name", "Преподаватель")
+        bio = teacher.get("bio") or teacher.get("description") or ""
+        caption = f"{name}\n\n{bio}".strip()
         keyboard = self._teacher_inline_keyboard()
         photo_reference = self._resolve_media_reference(
             teacher,
@@ -4729,17 +5977,22 @@ class ConfettiTelegramBot:
             return
 
         key = data[1]
+        if key == "back":
+            await query.answer()
+            await self._send_about(update, context)
+            return
         try:
             index = int(key)
         except ValueError:
             await query.answer("Неизвестное направление.", show_alert=True)
             return
 
-        if not 0 <= index < len(self.PROGRAMS):
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
             await query.answer("Направление не найдено.", show_alert=True)
             return
 
-        program = self.PROGRAMS[index]
+        program = programs[index]
         await query.answer()
 
         overview = self._format_program_details(program)
