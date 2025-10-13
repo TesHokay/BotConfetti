@@ -374,6 +374,12 @@ class ConfettiTelegramBot:
     PAYMENTS_SPREADSHEET_ENV = "CONFETTI_PAYMENTS_SHEETS_ID"
     DEFAULT_PAYMENTS_SPREADSHEET_ID = "1dPD-mvtncpl0Fn2VYBE2VPSHZESk9NGJxfGNUljHOr0"
 
+    TIME_OF_DAY_OPTIONS = (
+        "☀️ Утро: 10:00 – 12:00",
+        "🌤 День: 14:00 – 16:00",
+        "🌙 Вечер: 18:00 – 20:00",
+    )
+
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание"),
         ("ℹ️ О студии", "👩‍🏫 Преподаватели"),
