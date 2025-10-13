@@ -1698,11 +1698,10 @@ class ConfettiTelegramBot:
 
     async def _send_greeting(self, update: Update, context: Optional[ContextTypes.DEFAULT_TYPE] = None) -> None:
         greeting = (
-            "🎉 🇫🇷 Bonjour et bienvenue dans la compagnie «Confetti» !\n"
-            "🎉 🇷🇺 Здравствуйте и добро пожаловать в студию «Конфетти»!\n\n"
-            "Nous adorons la France et le français — et nous sommes prêts à partager cet amour à chacun.\n\n"
+            "🎉 🇷🇺 Здравствуйте и добро пожаловать в студию «Конфетти»!\n"
             "Мы обожаем Францию и французский — и готовы делиться этой любовью с каждым.\n\n"
-            "👉 Veuillez choisir une rubrique dans le menu ci-dessous.\n"
+            "🎉 🇫🇷 Bonjour et bienvenue dans la compagnie «Confetti» !\n\n"
+            "Nous adorons la France et le français — et nous sommes prêts à partager cet amour à chacun.\n\n"
             "👉 Пожалуйста, выберите раздел в меню ниже."
         )
         if self._is_admin_update(update, context):
