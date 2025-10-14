@@ -329,8 +329,9 @@ class ConfettiTelegramBot:
     CANCELLATION_REASON = 25
 
     PAYMENT_REPORT_PROGRAM = 41
-    PAYMENT_REPORT_NAME = 42
-    PAYMENT_REPORT_MEDIA = 43
+    PAYMENT_REPORT_CHILD = 42
+    PAYMENT_REPORT_CONTACT = 43
+    PAYMENT_REPORT_MEDIA = 44
 
     MAIN_MENU_BUTTON = "⬅️ Главное меню"
     REGISTRATION_BUTTON = "📝 Запись"
@@ -364,7 +365,8 @@ class ConfettiTelegramBot:
     PAYMENT_EXPORT_COLUMN_WIDTHS = (
         20,
         36,
-        30,
+        32,
+        24,
         36,
         24,
     )
@@ -1025,11 +1027,16 @@ class ConfettiTelegramBot:
                                 "preview_mime": str(entry.get("preview_mime", "")),
                             }
                         )
+                child_name = item.get("child_name") or ""
+                contact_name = item.get("contact_name") or ""
+                full_name = item.get("full_name") or ""
                 payments.append(
                     {
                         "id": str(item.get("id", "")),
                         "program": str(item.get("program", "")),
-                        "full_name": str(item.get("full_name", "")),
+                        "child_name": str(child_name),
+                        "contact_name": str(contact_name or full_name),
+                        "full_name": str(full_name or contact_name),
                         "chat_id": item.get("chat_id"),
                         "submitted_by": str(item.get("submitted_by", "")),
                         "submitted_by_id": item.get("submitted_by_id"),
@@ -1664,7 +1671,7 @@ class ConfettiTelegramBot:
                         self._payment_report_prompt_program,
                     ),
                 ],
-                self.PAYMENT_REPORT_NAME: [
+                self.PAYMENT_REPORT_CHILD: [
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._payment_report_cancel,
@@ -1675,7 +1682,21 @@ class ConfettiTelegramBot:
                     ),
                     MessageHandler(
                         filters.TEXT & ~filters.COMMAND,
-                        self._payment_report_collect_name,
+                        self._payment_report_collect_child_name,
+                    ),
+                ],
+                self.PAYMENT_REPORT_CONTACT: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._payment_report_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._payment_report_back_to_child,
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._payment_report_collect_contact_name,
                     ),
                 ],
                 self.PAYMENT_REPORT_MEDIA: [
@@ -1685,7 +1706,7 @@ class ConfettiTelegramBot:
                     ),
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._payment_report_back_to_name,
+                        self._payment_report_back_to_contact,
                     ),
                     MessageHandler(~filters.COMMAND, self._payment_report_collect_media),
                 ],
@@ -2003,7 +2024,9 @@ class ConfettiTelegramBot:
         record = {
             "id": record_id,
             "program": data.get("program", ""),
-            "full_name": data.get("full_name", ""),
+            "child_name": data.get("child_name", ""),
+            "contact_name": data.get("contact_name", ""),
+            "full_name": data.get("contact_name", ""),
             "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
             "submitted_by": getattr(user, "full_name", None) or "",
             "submitted_by_id": getattr(user, "id", None),
@@ -3250,10 +3273,7 @@ class ConfettiTelegramBot:
     # Payment report conversation
 
     def _payment_report_intro(self) -> str:
-        return (
-            "Выберите направление, за которое хотите сообщить об оплате.\n"
-            "Нажмите на кнопку ниже, чтобы выбрать программу."
-        )
+        return "Выберите направление, которое оплатили."
 
     def _payment_program_catalog(self) -> list[dict[str, str]]:
         return [{"title": title} for title in self.PAYMENT_PROGRAM_OPTIONS]
@@ -3337,8 +3357,11 @@ class ConfettiTelegramBot:
             await query.edit_message_reply_markup(None)
         except Exception:
             pass
-        context.user_data.setdefault("payment_report", {})["program"] = title
-        return await self._payment_report_prompt_name(update, context)
+        data = context.user_data.setdefault("payment_report", {})
+        data["program"] = title
+        for field in ("child_name", "contact_name"):
+            data.pop(field, None)
+        return await self._payment_report_prompt_child_name(update, context)
 
     async def _payment_report_cancel_from_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -3349,7 +3372,7 @@ class ConfettiTelegramBot:
         await self._payment_report_cancel(update, context)
         return ConversationHandler.END
 
-    async def _payment_report_prompt_name(
+    async def _payment_report_prompt_child_name(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
@@ -3358,20 +3381,20 @@ class ConfettiTelegramBot:
     ) -> int:
         data = context.user_data.setdefault("payment_report", {})
         program = data.get("program", "направление")
-        if remind and data.get("full_name"):
+        if remind and data.get("child_name"):
             message = (
-                f"Сейчас указано имя: {data.get('full_name', '—')}.\n"
-                "Введите фамилию и имя плательщика ещё раз."
+                f"Сейчас указано имя ребёнка: {data.get('child_name', '—')}.\n"
+                "Введите фамилию и имя ребёнка ещё раз."
             )
         else:
             message = (
                 f"Вы выбрали: {program}.\n"
-                "Напишите, пожалуйста, фамилию и имя плательщика."
+                "Напишите, пожалуйста, фамилию и имя ребёнка."
             )
         await self._reply(update, message, reply_markup=self._back_keyboard())
-        return self.PAYMENT_REPORT_NAME
+        return self.PAYMENT_REPORT_CHILD
 
-    async def _payment_report_collect_name(
+    async def _payment_report_collect_child_name(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
         text = (update.message.text or "").strip()
@@ -3382,18 +3405,62 @@ class ConfettiTelegramBot:
         if not text:
             await self._reply(
                 update,
-                "Пожалуйста, укажите фамилию и имя плательщика.",
+                "Пожалуйста, укажите фамилию и имя ребёнка.",
                 reply_markup=self._back_keyboard(),
             )
-            return self.PAYMENT_REPORT_NAME
-        context.user_data.setdefault("payment_report", {})["full_name"] = text
-        return await self._payment_report_prompt_media(update, context)
+            return self.PAYMENT_REPORT_CHILD
+        context.user_data.setdefault("payment_report", {})["child_name"] = text
+        return await self._payment_report_prompt_contact_name(update, context)
 
     async def _payment_report_back_to_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        context.user_data.setdefault("payment_report", {}).pop("program", None)
+        data = context.user_data.setdefault("payment_report", {})
+        for key in ("child_name", "contact_name", "program"):
+            data.pop(key, None)
         return await self._payment_report_prompt_program(update, context)
+
+    async def _payment_report_prompt_contact_name(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        remind: bool = False,
+    ) -> int:
+        data = context.user_data.setdefault("payment_report", {})
+        if remind and data.get("contact_name"):
+            message = (
+                f"Сейчас указано контактное лицо: {data.get('contact_name', '—')}.\n"
+                "Введите имя контактного лица ещё раз."
+            )
+        else:
+            message = "Напишите, пожалуйста, имя контактного лица."
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.PAYMENT_REPORT_CONTACT
+
+    async def _payment_report_collect_contact_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._payment_report_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._payment_report_back_to_child(update, context)
+        if not text:
+            await self._reply(
+                update,
+                "Пожалуйста, укажите имя контактного лица.",
+                reply_markup=self._back_keyboard(),
+            )
+            return self.PAYMENT_REPORT_CONTACT
+        context.user_data.setdefault("payment_report", {})["contact_name"] = text
+        return await self._payment_report_prompt_media(update, context)
+
+    async def _payment_report_back_to_child(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        context.user_data.setdefault("payment_report", {}).pop("contact_name", None)
+        return await self._payment_report_prompt_child_name(update, context, remind=True)
 
     async def _payment_report_prompt_media(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -3409,11 +3476,11 @@ class ConfettiTelegramBot:
         )
         return self.PAYMENT_REPORT_MEDIA
 
-    async def _payment_report_back_to_name(
+    async def _payment_report_back_to_contact(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
         context.user_data.setdefault("payment_report", {}).pop("attachments", None)
-        return await self._payment_report_prompt_name(update, context, remind=True)
+        return await self._payment_report_prompt_contact_name(update, context, remind=True)
 
     async def _payment_report_collect_media(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -3425,7 +3492,7 @@ class ConfettiTelegramBot:
             return await self._payment_report_cancel(update, context)
 
         if text == self.BACK_BUTTON:
-            return await self._payment_report_back_to_name(update, context)
+            return await self._payment_report_back_to_contact(update, context)
 
         if not attachments:
             await self._reply(
@@ -3470,7 +3537,8 @@ class ConfettiTelegramBot:
         confirmation = (
             "Спасибо! Мы зафиксировали подтверждение оплаты.\n\n"
             f"📚 Направление: {stored.get('program', '—')}\n"
-            f"👤 Плательщик: {stored.get('full_name', '—')}\n"
+            f"👦 Ребёнок: {stored.get('child_name', '—')}\n"
+            f"👤 Контактное лицо: {stored.get('contact_name', '—')}\n"
             f"🕒 Отправлено: {stored.get('created_at', '—')}"
         )
         await self._reply(
@@ -3481,7 +3549,8 @@ class ConfettiTelegramBot:
         admin_message = (
             "💳 Новое подтверждение оплаты\n"
             f"📚 Направление: {stored.get('program', '—')}\n"
-            f"👤 Плательщик: {stored.get('full_name', '—')}\n"
+            f"👦 Ребёнок: {stored.get('child_name', '—')}\n"
+            f"👤 Контактное лицо: {stored.get('contact_name', '—')}\n"
             f"🕒 Отправлено: {stored.get('created_at', '—')}\n"
             f"👤 Отправил: {stored.get('submitted_by', '—')}"
         )
@@ -5408,7 +5477,8 @@ class ConfettiTelegramBot:
         header = (
             "Дата сообщения",
             "Направление",
-            "Плательщик",
+            "Ребёнок",
+            "Контактное лицо",
             "Фото оплаты",
             "Отправитель",
         )
@@ -5436,7 +5506,8 @@ class ConfettiTelegramBot:
                 [
                     make_cell(record.get("created_at") or ""),
                     make_cell(record.get("program") or ""),
-                    make_cell(record.get("full_name") or ""),
+                    make_cell(record.get("child_name") or record.get("full_name") or ""),
+                    make_cell(record.get("contact_name") or record.get("full_name") or ""),
                     make_cell(link_cell),
                     make_cell(record.get("submitted_by") or ""),
                 ]
@@ -5827,7 +5898,8 @@ class ConfettiTelegramBot:
         summary_lines = [
             "💳 Подтверждение оплаты",
             f"📚 Направление: {record.get('program', '—')}",
-            f"👤 Плательщик: {record.get('full_name', '—')}",
+            f"👦 Ребёнок: {record.get('child_name', '—')}",
+            f"👤 Контактное лицо: {record.get('contact_name', '—')}",
             f"🕒 Отправлено: {record.get('created_at', '—')}",
             f"📎 Файлов: {len(attachments)}",
         ]
