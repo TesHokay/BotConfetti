@@ -379,6 +379,18 @@ class ConfettiTelegramBot:
         ("📚 Слово дня", CANCELLATION_BUTTON),
     )
 
+    PAYMENT_PROGRAM_OPTIONS: tuple[str, ...] = (
+        "Весёлый французский, 3 класс (Alain Marinot)",
+        "Весёлый французский и театр (Ксения Настыч)",
+        "Весёлый французский, 1 класс (Вшивкова Ксения)",
+        "Корейский для подростков (Вшивкова Ксения)",
+        "Весёлый французский и театр (Анастасия Банникова)",
+        "Разговорный клуб",
+        "Французский по-взрослому",
+        "Индивидуальные занятия",
+        "Интенсивы в каникулы",
+    )
+
     DEFAULT_PROGRAMS: tuple[dict[str, str], ...] = (
         {
             "id": "prog-french",
@@ -1727,48 +1739,6 @@ class ConfettiTelegramBot:
                         self._cancellation_collect_contact,
                     ),
                 ],
-                self.CANCELLATION_CHILD: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._cancellation_cancel,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._cancellation_back_to_contact,
-                    ),
-                    MessageHandler(
-                        filters.TEXT & ~filters.COMMAND,
-                        self._cancellation_collect_child,
-                    ),
-                ],
-                self.CANCELLATION_PHONE: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._cancellation_cancel,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._cancellation_back_to_child,
-                    ),
-                    MessageHandler(
-                        filters.TEXT & ~filters.COMMAND,
-                        self._cancellation_collect_phone,
-                    ),
-                ],
-                self.CANCELLATION_REASON: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._cancellation_cancel,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._cancellation_back_to_phone,
-                    ),
-                    MessageHandler(
-                        ~filters.COMMAND,
-                        self._cancellation_collect_reason,
-                    ),
-                ],
                 },
                 fallbacks=[
                     CommandHandler("cancel", self._cancellation_cancel),
@@ -3026,7 +2996,7 @@ class ConfettiTelegramBot:
         else:
             message = (
                 f"Мы записали: {child_name}, школа {school}.\n"
-                "Напишите, пожалуйста, класс или возраст ребёнка."
+                "Напишите, пожалуйста, класс ребёнка."
             )
         await self._reply(update, message, reply_markup=self._back_keyboard())
         return self.REGISTRATION_CLASS
@@ -3038,9 +3008,9 @@ class ConfettiTelegramBot:
         if remind and registration.get("contact_name"):
             message = (
                 f"Сейчас указано контактное лицо: {registration.get('contact_name', '—')}.")
-            message += "\nВведите фамилию и имя человека для связи."
+            message += "\nВведите имя человека для связи."
         else:
-            message = "Укажите фамилию и имя контактного лица для связи."
+            message = "Укажите имя контактного лица для связи."
         await self._reply(update, message, reply_markup=self._back_keyboard())
         return self.REGISTRATION_CONTACT_NAME
 
@@ -3069,9 +3039,12 @@ class ConfettiTelegramBot:
         if remind and registration.get("comment"):
             message = (
                 f"Текущий комментарий: {registration.get('comment', '—')}.")
-            message += "\nВведите новый комментарий или укажите «Нет»."
+            message += "\nЕсли комментарий не нужен, напишите «Нет»."
         else:
-            message = "Добавьте комментарий или особые пожелания. Если нечего добавить, напишите «Нет»."
+            message = (
+                "Добавьте комментарий или особые пожелания. Если нет особых пожеланий, "
+                "просто напишите: «Нет»."
+            )
         await self._reply(update, message, reply_markup=self._back_keyboard())
         return self.REGISTRATION_COMMENT
 
@@ -3220,7 +3193,8 @@ class ConfettiTelegramBot:
     def _absence_intro(self) -> str:
         return (
             "Выберите направление, по которому хотите сообщить об отсутствии.\n\n"
-            "⚠️ Оплата не возвращается — средства остаются на балансе студии."
+            "⚠️К сожалению, в студии не предусмотрены компенсации и отработки, "
+            "так как языковые группы небольшие. Если занятие состоялось, оно подлежит оплате."
         )
 
     def _absence_program_keyboard(self) -> "InlineKeyboardMarkup":
@@ -3242,40 +3216,11 @@ class ConfettiTelegramBot:
     ) -> int:
         await self._reply(
             update,
-            "Напишите фамилию и имя контактного лица, который сообщает об отсутствии.",
+            "Напишите фамилию, имя и при необходимости отчество ребёнка, который "
+            "пропустит занятие.",
             reply_markup=self._back_keyboard(),
         )
         return self.CANCELLATION_CONTACT
-
-    async def _absence_prompt_child(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        await self._reply(
-            update,
-            "Укажите имя и фамилию ребёнка, который пропустит занятие.",
-            reply_markup=self._back_keyboard(),
-        )
-        return self.CANCELLATION_CHILD
-
-    async def _absence_prompt_phone(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        await self._reply(
-            update,
-            "Оставьте контактный номер телефона для связи.",
-            reply_markup=self._phone_keyboard(),
-        )
-        return self.CANCELLATION_PHONE
-
-    async def _absence_prompt_reason(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        await self._reply(
-            update,
-            "Расскажите, по какой причине ребёнок пропустит занятие.",
-            reply_markup=self._back_keyboard(),
-        )
-        return self.CANCELLATION_REASON
 
     async def _registration_collect_phone_text(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -3310,8 +3255,11 @@ class ConfettiTelegramBot:
             "Нажмите на кнопку ниже, чтобы выбрать программу."
         )
 
+    def _payment_program_catalog(self) -> list[dict[str, str]]:
+        return [{"title": title} for title in self.PAYMENT_PROGRAM_OPTIONS]
+
     def _payment_program_keyboard(self) -> "InlineKeyboardMarkup":
-        programs = self._program_catalog()
+        programs = self._payment_program_catalog()
         buttons = [
             [
                 InlineKeyboardButton(
@@ -3329,7 +3277,7 @@ class ConfettiTelegramBot:
     ) -> int:
         self._remember_chat(update, context)
         context.user_data["payment_report"] = {}
-        if not self._program_catalog():
+        if not self._payment_program_catalog():
             await self._reply(
                 update,
                 "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
@@ -3347,7 +3295,7 @@ class ConfettiTelegramBot:
     async def _payment_report_prompt_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        if not self._program_catalog():
+        if not self._payment_program_catalog():
             await self._reply(
                 update,
                 "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
@@ -3377,24 +3325,24 @@ class ConfettiTelegramBot:
             await query.answer("Не удалось определить направление.", show_alert=True)
             return self.PAYMENT_REPORT_PROGRAM
 
-        programs = self._program_catalog()
+        programs = self._payment_program_catalog()
         if not 0 <= index < len(programs):
             await query.answer("Направление недоступно.", show_alert=True)
             return self.PAYMENT_REPORT_PROGRAM
 
         program = programs[index]
         await query.answer()
-        details = self._format_program_details(program)
+        title = str(program.get("title", f"Направление {index + 1}"))
         try:  # pragma: no cover - depends on telegram runtime
-            await query.edit_message_text(f"Вы выбрали направление:\n{details}")
+            await query.edit_message_text(f"Вы выбрали направление:\n{title}")
         except Exception:
             try:
                 await query.edit_message_reply_markup(None)
             except Exception:
                 pass
-            await self._reply(update, f"Вы выбрали направление:\n{details}")
+            await self._reply(update, f"Вы выбрали направление:\n{title}")
 
-        context.user_data.setdefault("payment_report", {})["program"] = str(program.get("title", ""))
+        context.user_data.setdefault("payment_report", {})["program"] = title
         return await self._payment_report_prompt_name(update, context)
 
     async def _payment_report_cancel_from_program(
@@ -3625,7 +3573,7 @@ class ConfettiTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
         data = context.user_data.setdefault("absence", {})
-        for key in ("contact_name", "child_name", "phone", "reason"):
+        for key in ("child_name",):
             data.pop(key, None)
         data.pop("program", None)
         return await self._cancellation_prompt_program(update, context)
@@ -3639,74 +3587,24 @@ class ConfettiTelegramBot:
         if text == self.BACK_BUTTON:
             return await self._cancellation_back_to_program(update, context)
 
-        data = context.user_data.setdefault("absence", {})
-        data["contact_name"] = text
-        return await self._absence_prompt_child(update, context)
-
-    async def _cancellation_back_to_contact(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        data = context.user_data.setdefault("absence", {})
-        data.pop("child_name", None)
-        return await self._absence_prompt_contact(update, context)
-
-    async def _cancellation_collect_child(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        text = (update.message.text or "").strip()
-        if text == self.MAIN_MENU_BUTTON:
-            return await self._cancellation_cancel(update, context)
-        if text == self.BACK_BUTTON:
-            return await self._cancellation_back_to_contact(update, context)
+        if not text:
+            await self._reply(
+                update,
+                "Пожалуйста, укажите фамилию и имя ребёнка, который пропустит занятие.",
+                reply_markup=self._back_keyboard(),
+            )
+            return self.CANCELLATION_CONTACT
 
         data = context.user_data.setdefault("absence", {})
         data["child_name"] = text
-        return await self._absence_prompt_phone(update, context)
+        return await self._complete_absence_report(update, context)
 
-    async def _cancellation_back_to_child(
+    async def _complete_absence_report(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
         data = context.user_data.setdefault("absence", {})
-        data.pop("phone", None)
-        return await self._absence_prompt_child(update, context)
 
-    async def _cancellation_collect_phone(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        text = (update.message.text or "").strip()
-        if text == self.MAIN_MENU_BUTTON:
-            return await self._cancellation_cancel(update, context)
-        if text == self.BACK_BUTTON:
-            return await self._cancellation_back_to_contact(update, context)
-
-        data = context.user_data.setdefault("absence", {})
-        data["phone"] = text
-        return await self._absence_prompt_reason(update, context)
-
-    async def _cancellation_back_to_phone(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        data = context.user_data.setdefault("absence", {})
-        data.pop("reason", None)
-        return await self._absence_prompt_phone(update, context)
-
-    async def _cancellation_collect_reason(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        text, _ = self._extract_message_payload(update.message)
-
-        if text == self.MAIN_MENU_BUTTON:
-            return await self._cancellation_cancel(update, context)
-        if text == self.BACK_BUTTON:
-            return await self._cancellation_back_to_phone(update, context)
-
-        data = context.user_data.setdefault("absence", {})
-        data["reason"] = text or ""
-
-        confirmation = (
-            "✅ Спасибо! Мы зафиксировали отсутствие.\n"
-            "⚠️ Средства за пропущенное занятие не возвращаются — они остаются на балансе студии."
-        )
+        confirmation = "✅ Спасибо! Мы зафиксировали отсутствие."
         await self._reply(
             update,
             confirmation,
@@ -3716,15 +3614,9 @@ class ConfettiTelegramBot:
         admin_message = (
             "🚨 Сообщение об отсутствии\n"
             f"📚 Направление: {data.get('program', '—')}\n"
-            f"👤 Контакт: {data.get('contact_name', '—')}\n"
-            f"👦 Ребёнок: {data.get('child_name', '—')}\n"
-            f"📞 Телефон: {data.get('phone', '—')}\n"
-            f"📝 Причина: {data.get('reason', '—')}"
+            f"👦 Ребёнок: {data.get('child_name', '—')}"
         )
-        await self._notify_admins(
-            context,
-            admin_message,
-        )
+        await self._notify_admins(context, admin_message)
 
         context.user_data.pop("absence", None)
         await self._show_main_menu(update, context)
@@ -5472,7 +5364,7 @@ class ConfettiTelegramBot:
             "Программа",
             "Участник",
             "Школа",
-            "Класс / возраст",
+            "Класс",
             "Контактное лицо",
             "Телефон",
             "Комментарий",
