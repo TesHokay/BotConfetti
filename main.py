@@ -3334,13 +3334,10 @@ class ConfettiTelegramBot:
         await query.answer()
         title = str(program.get("title", f"Направление {index + 1}"))
         try:  # pragma: no cover - depends on telegram runtime
-            await query.edit_message_text(f"Вы выбрали направление:\n{title}")
+            await query.edit_message_reply_markup(None)
         except Exception:
-            try:
-                await query.edit_message_reply_markup(None)
-            except Exception:
-                pass
-            await self._reply(update, f"Вы выбрали направление:\n{title}")
+            pass
+        await self._reply(update, f"Вы выбрали направление:\n{title}")
 
         context.user_data.setdefault("payment_report", {})["program"] = title
         return await self._payment_report_prompt_name(update, context)
@@ -3557,10 +3554,17 @@ class ConfettiTelegramBot:
         if not 0 <= index < len(programs):
             return await self._cancellation_prompt_program(update, context)
 
+        await query.answer()
+
         program = programs[index]
         data = context.user_data.setdefault("absence", {})
         data.clear()
         data["program"] = str(program.get("title", ""))
+
+        try:  # pragma: no cover - depends on telegram runtime
+            await query.edit_message_reply_markup(None)
+        except Exception:
+            pass
 
         return await self._absence_prompt_contact(update, context)
 
