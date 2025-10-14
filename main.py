@@ -3337,8 +3337,6 @@ class ConfettiTelegramBot:
             await query.edit_message_reply_markup(None)
         except Exception:
             pass
-        await self._reply(update, f"Вы выбрали направление:\n{title}")
-
         context.user_data.setdefault("payment_report", {})["program"] = title
         return await self._payment_report_prompt_name(update, context)
 
