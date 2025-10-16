@@ -316,25 +316,28 @@ class ConfettiTelegramBot:
 
     REGISTRATION_PROGRAM = 1
     REGISTRATION_CHILD_NAME = 2
-    REGISTRATION_CLASS = 3
-    REGISTRATION_PHONE = 4
-    REGISTRATION_TIME = 5
-    REGISTRATION_PAYMENT = 6
-    REGISTRATION_CONFIRM_DETAILS = 7
-    REGISTRATION_TIME_DECISION = 8
+    REGISTRATION_SCHOOL = 3
+    REGISTRATION_CLASS = 4
+    REGISTRATION_CONTACT_NAME = 5
+    REGISTRATION_PHONE = 6
+    REGISTRATION_COMMENT = 7
 
     CANCELLATION_PROGRAM = 21
-    CANCELLATION_REASON = 22
+    CANCELLATION_CONTACT = 22
+    CANCELLATION_CHILD = 23
+    CANCELLATION_PHONE = 24
+    CANCELLATION_REASON = 25
+
+    PAYMENT_REPORT_PROGRAM = 41
+    PAYMENT_REPORT_CHILD = 42
+    PAYMENT_REPORT_CONTACT = 43
+    PAYMENT_REPORT_MEDIA = 44
 
     MAIN_MENU_BUTTON = "⬅️ Главное меню"
     REGISTRATION_BUTTON = "📝 Запись"
-    CANCELLATION_BUTTON = "❗️ Отменить занятие"
-    REGISTRATION_CONFIRM_SAVED_BUTTON = "✅ Продолжить"
-    REGISTRATION_EDIT_DETAILS_BUTTON = "✏️ Изменить данные"
-    REGISTRATION_KEEP_TIME_BUTTON = "🔁 То же время"
-    REGISTRATION_NEW_TIME_BUTTON = "⏰ Другое время"
+    CANCELLATION_BUTTON = "❗️ Сообщить об отсутствии"
     BACK_BUTTON = "◀️ Назад"
-    REGISTRATION_LIST_BUTTON = "📋 Список записей"
+    PAYMENT_REPORT_BUTTON = "💳 Сообщить об оплате"
     ADMIN_MENU_BUTTON = "🛠 Админ-панель"
     ADMIN_BACK_TO_USER_BUTTON = "⬅️ Пользовательское меню"
     ADMIN_BROADCAST_BUTTON = "📣 Рассылка"
@@ -343,163 +346,212 @@ class ConfettiTelegramBot:
     ADMIN_EDIT_SCHEDULE_BUTTON = "🗓 Редактировать расписание"
     ADMIN_EDIT_ABOUT_BUTTON = "ℹ️ Редактировать информацию"
     ADMIN_EDIT_TEACHERS_BUTTON = "👩‍🏫 Редактировать преподавателей"
-    ADMIN_EDIT_ALBUM_BUTTON = "📸 Редактировать фотоальбом"
     ADMIN_EDIT_CONTACTS_BUTTON = "📞 Редактировать контакты"
     ADMIN_EDIT_VOCABULARY_BUTTON = "📚 Редактировать словарь"
     ADMIN_CANCEL_KEYWORDS = ("отмена", "annuler", "cancel")
     ADMIN_CANCEL_PROMPT = f"\n\nЧтобы отменить, нажмите «{BACK_BUTTON}» или напишите «Отмена»."
 
-    EXPORT_COLUMN_WIDTHS = (
+    REGISTRATION_EXPORT_COLUMN_WIDTHS = (
         20,
         36,
         30,
-        22,
+        30,
         18,
-        26,
+        30,
+        18,
+        32,
+    )
+
+    PAYMENT_EXPORT_COLUMN_WIDTHS = (
+        20,
+        36,
+        32,
+        24,
         36,
         24,
     )
 
+    PAYMENTS_SPREADSHEET_ENV = "CONFETTI_PAYMENTS_SHEETS_ID"
+    DEFAULT_PAYMENTS_SPREADSHEET_ID = "1dPD-mvtncpl0Fn2VYBE2VPSHZESk9NGJxfGNUljHOr0"
+
     MAIN_MENU_LAYOUT = (
         (REGISTRATION_BUTTON, "📅 Расписание"),
         ("ℹ️ О студии", "👩‍🏫 Преподаватели"),
-        (REGISTRATION_LIST_BUTTON, "📞 Контакты"),
-        ("📚 Полезные слова", CANCELLATION_BUTTON),
+        (PAYMENT_REPORT_BUTTON, "📞 Контакты"),
+        ("📚 Слово дня", CANCELLATION_BUTTON),
     )
 
-    TIME_OF_DAY_OPTIONS = (
-        "☀️ Утро (10:00 - 12:00)",
-        "🌤 День (14:00 – 16:00)",
-        "🌙 Вечер (18:00 – 20:00)",
+    PAYMENT_PROGRAM_OPTIONS: tuple[str, ...] = (
+        "Весёлый французский, 3 класс (Alain Marinot)",
+        "Весёлый французский и театр (Ксения Настыч)",
+        "Весёлый французский, 1 класс (Вшивкова Ксения)",
+        "Корейский для подростков (Вшивкова Ксения)",
+        "Весёлый французский и театр (Анастасия Банникова)",
+        "Разговорный клуб",
+        "Французский по-взрослому",
+        "Индивидуальные занятия",
+        "Интенсивы в каникулы",
     )
 
-    PROGRAMS = (
+    DEFAULT_PROGRAMS: tuple[dict[str, str], ...] = (
         {
-            "label": "📚 Французский каждый день",
-            "audience": "С 3 по 11 класс",
-            "teacher": "Преподаватель: Настыч Ксения Викторовна",
-            "schedule": "Дни занятий: вторник или четверг вечером",
-            "description": (
-                "Интенсивная языковая практика в будни. Ученики погружаются "
-                "в язык через общение, игры и проекты, закрепляя школьную программу "
-                "и расширяя словарный запас."
+            "id": "prog-french",
+            "title": "📚 Веселый французский",
+            "body": (
+                "Интенсивная языковая практика. Ученики погружаются в язык через"
+                " общение, игры и проекты, закрепляя школьную программу и"
+                " расширяя словарный запас.\n\n"
+                "С 3 по 11 класс."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/kazd.png",
+            "code": "french",
         },
         {
-            "label": "🎭 Театр на французском (вечер)",
-            "teacher": "Преподаватель: Настыч Ксения Викторовна",
-            "schedule": "Дни занятий: вторник или четверг вечером",
-            "description": (
-                "Театральная студия для тех, кто любит сцену и французский язык. "
-                "Готовим постановки, работаем над произношением и учимся импровизировать "
-                "на французском."
+            "id": "prog-theatre",
+            "title": "🎭 Театр на французском",
+            "body": (
+                "Театральная студия для тех, кто любит сцену и французский язык."
+                " Готовим постановки, работаем над произношением и учимся"
+                " импровизировать на французском."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/photo_2025-09-29_16-01-53(1).jpg",
         },
         {
-            "label": "📚 Воскресный французский",
-            "audience": "1–4 класс",
-            "teacher": "Преподаватель: Банникова Анастасия Дмитриевна",
-            "schedule": "Дни занятий: воскресенье",
-            "description": (
-                "Уютные воскресные встречи для младших школьников. Развиваем речь "
-                "через творчество, песни и игры, знакомимся с французскими традициями."
-            ),
-            "photo_url": "https://storage.yandexcloud.net/bigbob/voskr.png",
-        },
-        {
-            "label": "🎭 Театр на французском (воскресенье)",
-            "teacher": "Преподаватель: Банникова Анастасия Дмитриевна",
-            "schedule": "Дни занятий: воскресенье",
-            "description": (
-                "Театральная студия выходного дня: работа с текстами, пластикой и "
-                "эмоциями на французском языке, совместные выступления и фестивали."
-            ),
-            "photo_url": "https://storage.yandexcloud.net/bigbob/teatr(1).jpg",
-        },
-        {
-            "label": "🇫🇷 Французский по-взрослому",
-            "audience": "Группа для взрослых (продолжающие)",
-            "teacher": "Преподаватель: Красноборова Людмила Анатольевна",
-            "schedule": "Дни занятий: понедельник / четверг / пятница",
-            "description": (
-                "Курс для тех, кто уже влюблён во французский. Углубляем грамматику, "
-                "отрабатываем разговорные ситуации и готовимся к международным экзаменам."
+            "id": "prog-adults",
+            "title": "🇫🇷 Французский по-взрослому",
+            "body": (
+                "Курс для тех, кто уже влюблён во французский. Углубляем"
+                " грамматику, отрабатываем разговорные ситуации и готовимся к"
+                " международным экзаменам.\n\n"
+                "Дни занятий: понедельник / четверг / пятница."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/vzros.png",
         },
         {
-            "label": "👩🏼‍🏫 Индивидуальные занятия",
-            "audience": "Французский, английский и корейский языки",
-            "teacher": "Преподаватели: команда студии и Ксения Вшивкова",
-            "schedule": "График подбирается персонально",
-            "description": (
-                "Персональные уроки под ваши цели: подготовка к экзаменам, "
-                "разговорная практика или помощь по школе. Ксения Вшивкова ведёт "
-                "индивидуальные занятия по французскому, английскому и корейскому языкам."
+            "id": "prog-individual",
+            "title": "👩🏼‍🏫 Индивидуальные занятия",
+            "body": (
+                "Персональные уроки под ваши цели: подготовка к экзаменам,"
+                " разговорная практика или помощь по школе.\n\n"
+                "Французский, английский и корейский языки."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/indidvid.png",
         },
         {
-            "label": "🍂 Осенний интенсив",
-            "audience": "Краткосрочная программа",
-            "schedule": "Сезонные смены, даты объявляются дополнительно",
-            "description": (
-                "Погружение в язык на время каникул: тематические мастер-классы, "
-                "театральные проекты и квесты на французском."
+            "id": "prog-camps",
+            "title": "🍂 Интенсивы в каникулы",
+            "body": (
+                "Погружение в язык на время каникул — отличная возможность"
+                " повторить важные темы и сделать большой шаг в изучении"
+                " французского. Занятия каждый день по 60 минут офлайн и онлайн"
+                " в мини и стандартных группах. Программа построена в"
+                " соответствии со школьной."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/osen.png",
         },
+        {
+            "id": "prog-korean-teens",
+            "title": "🇰🇷 Корейский для подростков",
+            "body": (
+                "Погружаемся в язык и культуру K-pop, сериалов и современных"
+                " трендов. Учимся говорить, писать и понимать живой корейский в"
+                " дружеской атмосфере."
+            ),
+            "photo_url": "https://storage.yandexcloud.net/bigbob/20251013_1759_%D0%92%D0%B5%D1%81%D1%91%D0%BB%D0%B0%D1%8F%20%D1%8F%D0%B7%D1%8B%D0%BA%D0%BE%D0%B2%D0%B0%D1%8F%20%D1%88%D0%BA%D0%BE%D0%BB%D0%B0_simple_compose_01k7etc95tfker7vx0btdsps6m.png",
+        },
+        {
+            "id": "prog-club",
+            "title": "🗣️ Языковой клуб",
+            "body": (
+                "Живое общение с носителем на актуальные темы. Практикуем"
+                " разговорную речь, учимся выражать мнение и обсуждать всё, что"
+                " действительно интересно."
+            ),
+            "photo_url": "https://storage.yandexcloud.net/bigbob/20251002_1805_%D0%A3%D1%80%D0%BE%D0%BA%D0%B8%20%D1%84%D1%80%D0%B0%D0%BD%D1%86%D1%83%D0%B7%D1%81%D0%BA%D0%BE%D0%B3%D0%BE%20%D1%8F%D0%B7%D1%8B%D0%BA%D0%B0_simple_compose_01k6jgb8aqet48evvgkw40f90a.png",
+        },
     )
 
-    TEACHERS = (
+    FRENCH_PROGRAM_LABEL = "📚 Веселый французский"
+    FRENCH_PROGRAM_VARIANTS: tuple[dict[str, str], ...] = (
         {
-            "key": "nastytsch",
+            "button": "Для 1 класса",
+            "stored": "Для 1 класса",
+        },
+        {
+            "button": "Для 2 класса",
+            "stored": "Для 2 класса",
+        },
+        {
+            "button": "Для 3 класса",
+            "stored": "Для 3 класса",
+        },
+        {
+            "button": "Для 4 класса",
+            "stored": "Для 4 класса",
+        },
+        {
+            "button": "Для 5-8 классов",
+            "stored": "Для 5-8 классов",
+        },
+    )
+
+    DEFAULT_TEACHERS: tuple[dict[str, str], ...] = (
+        {
+            "id": "teacher-nastytsch",
             "name": "Ксения Настыч",
-            "description": (
-                "Преподаватель французского языка с опытом более 20 лет. "
-                "Окончила Пермский государственный университет по специальности "
-                "«Филология» и имеет международный сертификат DALF. "
-                "Регулярно стажировалась во Франции и организовывала «русские сезоны» в Посольстве России."
+            "bio": (
+                "Преподаватель французского языка с опытом более 20 лет."
+                " Окончила Пермский государственный университет по"
+                " специальности «Филология» и имеет международный сертификат"
+                " DALF. Регулярно стажировалась во Франции и организовывала"
+                " «русские сезоны» в Посольстве России."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/nastych.jpg",
         },
         {
-            "key": "bannikova",
+            "id": "teacher-bannikova",
             "name": "Анастасия Банникова",
-            "description": (
-                "Ведёт воскресные программы и театральные занятия. "
-                "Выпускница Пермского государственного университета, стажировалась во Франции (Университет Гренобль-Альпы), имеет международный диплом DALF C1. Её стиль — дисциплина и порядок: дети учатся работать системно и добиваются стабильных результатов уже в первый год."
+            "bio": (
+                "Ведёт воскресные программы и театральные занятия. Выпускница"
+                " Пермского государственного университета, стажировалась во"
+                " Франции (Университет Гренобль-Альпы), имеет международный"
+                " диплом DALF C1. Её стиль — дисциплина и порядок: дети"
+                " учатся работать системно и добиваются стабильных результатов"
+                " уже в первый год."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/bannikova.jpg",
         },
         {
-            "key": "marinot",
+            "id": "teacher-marinot",
             "name": "Ален Марино",
-            "description": (
-                "Носитель французского языка с академическим парижским акцентом. "
-                "Актёр и душа студии, который общается с учениками только по-французски и погружает в живую культуру."
+            "bio": (
+                "Носитель французского языка с академическим парижским"
+                " акцентом. Актёр и душа студии, который общается с учениками"
+                " только по-французски и погружает в живую культуру."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/marinot.jpg",
         },
         {
-            "key": "krasnoborova",
+            "id": "teacher-krasnoborova",
             "name": "Людмила Красноборова",
-            "description": (
-                "Кандидат филологических наук, доцент ПГНИУ и экзаменатор DALF. "
-                "Готовит подростков и взрослых к экзаменам и олимпиадам, сочетая академизм и практику."
+            "bio": (
+                "Кандидат филологических наук, доцент ПГНИУ и экзаменатор DALF."
+                " Готовит подростков и взрослых к экзаменам и олимпиадам,"
+                " сочетая академизм и практику."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/lydmila.jpg",
         },
         {
-            "key": "vshivkova",
+            "id": "teacher-vshivkova",
             "name": "Ксения Вшивкова",
-            "description": (
-                "Владеет французским, английским и корейским языками. Студентка ПГНИУ (2021–2026), "
-                "факультет современного иностранных языков и литератур по направлению «Перевод и переводоведение». "
-                "Работает с детьми более четырёх лет. Ведёт групповые занятия по французскому и корейскому, "
-                "а также индивидуальные уроки по французскому, английскому и корейскому языкам."
+            "bio": (
+                "Владеет французским, английским и корейским языками."
+                " Студентка ПГНИУ (2021–2026), факультет современных иностранных"
+                " языков и литератур по направлению «Перевод и"
+                " переводоведение». Работает с детьми более четырёх лет."
+                " Ведёт групповые занятия по французскому и корейскому, а"
+                " также индивидуальные уроки по французскому, английскому и"
+                " корейскому языкам."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/vshyk.jpg",
         },
@@ -566,6 +618,11 @@ class ConfettiTelegramBot:
         return application
 
     def __post_init__(self) -> None:
+        if not isinstance(self.token, str):
+            potential_admins = self.token
+            if not self.admin_chat_ids:
+                self.admin_chat_ids = potential_admins  # type: ignore[assignment]
+            self.token = ""
         normalised = _normalise_admin_chat_ids(self.admin_chat_ids)
         self.admin_chat_ids = normalised
         self._runtime_admin_ids: set[int] = set(normalised)
@@ -574,15 +631,19 @@ class ConfettiTelegramBot:
         self.storage_path = storage_path.expanduser()
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self._known_registration_ids: set[str] = set()
+        self._known_payment_ids: set[str] = set()
         self._persistent_store: dict[str, Any] = self._load_persistent_state()
         self._ensure_registration_ids()
+        self._ensure_payment_ids()
+        self._ensure_program_catalog()
+        self._ensure_teacher_directory()
         dynamic_admins = self._persistent_store.get("dynamic_admins")
         if isinstance(dynamic_admins, set):
             self._runtime_admin_ids.update(dynamic_admins)
         self._storage_dirty = False
         self._bot_username: Optional[str] = None
-        self._google_sheets_exporter = _GoogleSheetsExporter.from_env()
-        self._last_google_sheet_url: Optional[str] = None
+        self._google_sheets_exporters: dict[str, Optional[_GoogleSheetsExporter]] = {}
+        self._last_google_sheet_urls: dict[str, Optional[str]] = {}
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -608,11 +669,307 @@ class ConfettiTelegramBot:
         if dirty:
             self._save_persistent_state()
 
+    def _ensure_payment_ids(self) -> None:
+        payments = self._persistent_store.get("payments")
+        if not isinstance(payments, list):
+            self._persistent_store["payments"] = []
+            return
+
+        dirty = False
+        for entry in payments:
+            if not isinstance(entry, dict):
+                continue
+            record_id = entry.get("id")
+            if record_id:
+                record_id_str = str(record_id)
+            else:
+                record_id_str = self._generate_payment_id()
+                entry["id"] = record_id_str
+                dirty = True
+            self._known_payment_ids.add(record_id_str)
+            attachments = entry.get("attachments")
+            cleaned: list[dict[str, str]] = []
+            if isinstance(attachments, list):
+                for item in attachments:
+                    if not isinstance(item, dict):
+                        continue
+                    kind = item.get("kind")
+                    file_id = item.get("file_id")
+                    if not kind or not file_id:
+                        continue
+                    cleaned.append(
+                        {
+                            "kind": str(kind),
+                            "file_id": str(file_id),
+                            "caption": str(item.get("caption", "")),
+                            "preview_base64": str(item.get("preview_base64", "")),
+                            "preview_mime": str(item.get("preview_mime", "")),
+                        }
+                    )
+            entry["attachments"] = cleaned
+        if dirty:
+            self._save_persistent_state()
+
+    def _generate_catalog_identifier(self, prefix: str, existing: set[str]) -> str:
+        while True:
+            candidate = f"{prefix}-{random.randint(100000, 999999)}"
+            if candidate not in existing:
+                return candidate
+
+    def _normalise_program_entry(
+        self, item: Any, existing_ids: set[str]
+    ) -> tuple[Optional[dict[str, Any]], bool]:
+        dirty = False
+        if not isinstance(item, dict):
+            return None, dirty
+
+        title_candidate = item.get("title") or item.get("label") or ""
+        title = str(title_candidate).strip()
+        if not title:
+            return None, dirty
+
+        identifier_candidate = str(item.get("id") or item.get("key") or "").strip()
+        if not identifier_candidate or identifier_candidate in existing_ids:
+            identifier_candidate = self._generate_catalog_identifier("prog", existing_ids)
+            dirty = True
+
+        body_parts: list[str] = []
+        body_value = item.get("body")
+        if isinstance(body_value, str) and body_value.strip():
+            body_parts.append(body_value.strip())
+        description = item.get("description")
+        if isinstance(description, str) and description.strip() and description.strip() not in body_parts:
+            if body_parts:
+                body_parts.append("")
+            body_parts.append(description.strip())
+
+        extras: list[str] = []
+        for field in ("audience", "teacher", "schedule"):
+            value = item.get(field)
+            if isinstance(value, str) and value.strip():
+                extras.append(value.strip())
+        if extras:
+            if body_parts:
+                body_parts.append("")
+            body_parts.extend(extras)
+
+        if not body_parts:
+            body_parts.append(title)
+
+        photo_file_id = str(item.get("photo_file_id", "") or "").strip()
+        photo_url = str(item.get("photo_url", "") or "").strip()
+        code = str(item.get("code", "") or "").strip()
+
+        variants_value = item.get("variants")
+        variants: list[dict[str, str]] = []
+        if isinstance(variants_value, list):
+            for option in variants_value:
+                if not isinstance(option, dict):
+                    continue
+                button = str(
+                    option.get("button")
+                    or option.get("label")
+                    or option.get("title")
+                    or ""
+                ).strip()
+                stored_raw = option.get("stored") or option.get("value")
+                stored = str(stored_raw or button).strip()
+                if not button:
+                    continue
+                variants.append({"button": button, "stored": stored or button})
+        if not variants and (code == "french" or title == self.FRENCH_PROGRAM_LABEL):
+            variants = [
+                {"button": option["button"], "stored": option.get("stored", option["button"])}
+                for option in self.FRENCH_PROGRAM_VARIANTS
+            ]
+
+        entry = {
+            "id": identifier_candidate,
+            "title": title,
+            "body": "\n".join(body_parts).strip(),
+            "photo_file_id": photo_file_id,
+            "photo_url": photo_url,
+            "code": code,
+            "variants": variants,
+        }
+        return entry, dirty
+
+    def _ensure_program_catalog(self) -> None:
+        programs_raw = self._persistent_store.get("programs")
+        normalized: list[dict[str, Any]] = []
+        dirty = False
+        existing_ids: set[str] = set()
+
+        if isinstance(programs_raw, list):
+            for item in programs_raw:
+                entry, entry_dirty = self._normalise_program_entry(item, existing_ids)
+                if entry is None:
+                    continue
+                if not entry.get("photo_file_id"):
+                    entry["photo_file_id"] = ""
+                if not entry.get("photo_url"):
+                    entry["photo_url"] = ""
+                normalized.append(entry)
+                existing_ids.add(entry["id"])
+                if entry_dirty:
+                    dirty = True
+
+        if not normalized:
+            normalized = [
+                {
+                    "id": item.get("id", self._generate_catalog_identifier("prog", existing_ids)),
+                    "title": item.get("title", ""),
+                    "body": item.get("body", ""),
+                    "photo_file_id": item.get("photo_file_id", ""),
+                    "photo_url": item.get("photo_url", ""),
+                    "code": item.get("code", ""),
+                    "variants": [
+                        {
+                            "button": option["button"],
+                            "stored": option.get("stored", option["button"]),
+                        }
+                        for option in (item.get("variants") or ())
+                    ]
+                    if item.get("variants")
+                    else (
+                        [
+                            {
+                                "button": option["button"],
+                                "stored": option.get("stored", option["button"]),
+                            }
+                            for option in self.FRENCH_PROGRAM_VARIANTS
+                        ]
+                        if item.get("code") == "french"
+                        else []
+                    ),
+                }
+                for item in self.DEFAULT_PROGRAMS
+            ]
+            for entry in normalized:
+                existing_ids.add(entry["id"])
+            dirty = True
+
+        self._persistent_store["programs"] = normalized
+        if dirty:
+            self._save_persistent_state()
+
+    def _normalise_teacher_entry(
+        self, item: Any, existing_ids: set[str]
+    ) -> tuple[Optional[dict[str, Any]], bool]:
+        dirty = False
+        if not isinstance(item, dict):
+            return None, dirty
+
+        name_candidate = item.get("name") or ""
+        name = str(name_candidate).strip()
+        if not name:
+            return None, dirty
+
+        identifier_candidate = str(item.get("id") or item.get("key") or "").strip()
+        if not identifier_candidate or identifier_candidate in existing_ids:
+            identifier_candidate = self._generate_catalog_identifier("teacher", existing_ids)
+            dirty = True
+
+        bio_parts: list[str] = []
+        for field in ("bio", "description"):
+            value = item.get(field)
+            if isinstance(value, str) and value.strip():
+                bio_parts.append(value.strip())
+        if not bio_parts:
+            bio_parts.append(name)
+
+        photo_file_id = str(item.get("photo_file_id", "") or "").strip()
+        photo_url = str(item.get("photo_url", "") or "").strip()
+
+        entry = {
+            "id": identifier_candidate,
+            "name": name,
+            "bio": "\n".join(bio_parts).strip(),
+            "photo_file_id": photo_file_id,
+            "photo_url": photo_url,
+        }
+        return entry, dirty
+
+    def _ensure_teacher_directory(self) -> None:
+        teachers_raw = self._persistent_store.get("teachers")
+        normalized: list[dict[str, Any]] = []
+        dirty = False
+        existing_ids: set[str] = set()
+
+        if isinstance(teachers_raw, list):
+            for item in teachers_raw:
+                entry, entry_dirty = self._normalise_teacher_entry(item, existing_ids)
+                if entry is None:
+                    continue
+                if not entry.get("photo_file_id"):
+                    entry["photo_file_id"] = ""
+                if not entry.get("photo_url"):
+                    entry["photo_url"] = ""
+                normalized.append(entry)
+                existing_ids.add(entry["id"])
+                if entry_dirty:
+                    dirty = True
+
+        if not normalized:
+            normalized = [
+                {
+                    "id": item.get("id", self._generate_catalog_identifier("teacher", existing_ids)),
+                    "name": item.get("name", ""),
+                    "bio": item.get("bio", ""),
+                    "photo_file_id": item.get("photo_file_id", ""),
+                    "photo_url": item.get("photo_url", ""),
+                }
+                for item in self.DEFAULT_TEACHERS
+            ]
+            for entry in normalized:
+                existing_ids.add(entry["id"])
+            dirty = True
+
+        self._persistent_store["teachers"] = normalized
+        if dirty:
+            self._save_persistent_state()
+
+    def _program_catalog(self) -> list[dict[str, Any]]:
+        programs = self._persistent_store.get("programs")
+        if isinstance(programs, list):
+            return programs
+        return []
+
+    def _program_variants(self, program: Optional[dict[str, Any]]) -> list[dict[str, str]]:
+        if not isinstance(program, dict):
+            return []
+        variants_value = program.get("variants")
+        result: list[dict[str, str]] = []
+        if isinstance(variants_value, list):
+            for option in variants_value:
+                if not isinstance(option, dict):
+                    continue
+                button = str(option.get("button", "") or "").strip()
+                stored_raw = option.get("stored") or option.get("value")
+                stored = str(stored_raw or button).strip()
+                if not button:
+                    continue
+                result.append({"button": button, "stored": stored or button})
+        return result
+
+    def _teacher_directory(self) -> list[dict[str, Any]]:
+        teachers = self._persistent_store.get("teachers")
+        if isinstance(teachers, list):
+            return teachers
+        return []
+
     def _generate_registration_id(self) -> str:
         while True:
             candidate = datetime.utcnow().strftime("%Y%m%d%H%M%S") + f"-{random.randint(1000, 9999)}"
             if candidate not in self._known_registration_ids:
                 self._known_registration_ids.add(candidate)
+                return candidate
+
+    def _generate_payment_id(self) -> str:
+        while True:
+            candidate = "PAY-" + datetime.utcnow().strftime("%Y%m%d%H%M%S") + f"-{random.randint(1000, 9999)}"
+            if candidate not in self._known_payment_ids:
+                self._known_payment_ids.add(candidate)
                 return candidate
 
     def _load_persistent_state(self) -> dict[str, Any]:
@@ -644,6 +1001,50 @@ class ConfettiTelegramBot:
             data["registrations"] = filtered
         else:
             data["registrations"] = []
+
+        payments_raw = data.get("payments")
+        payments: list[dict[str, Any]] = []
+        if isinstance(payments_raw, list):
+            for item in payments_raw:
+                if not isinstance(item, dict):
+                    continue
+                attachments_payload = item.get("attachments")
+                attachments: list[dict[str, str]] = []
+                if isinstance(attachments_payload, list):
+                    for entry in attachments_payload:
+                        if not isinstance(entry, dict):
+                            continue
+                        kind = entry.get("kind")
+                        file_id = entry.get("file_id")
+                        if not kind or not file_id:
+                            continue
+                        attachments.append(
+                            {
+                                "kind": str(kind),
+                                "file_id": str(file_id),
+                                "caption": str(entry.get("caption", "")),
+                                "preview_base64": str(entry.get("preview_base64", "")),
+                                "preview_mime": str(entry.get("preview_mime", "")),
+                            }
+                        )
+                child_name = item.get("child_name") or ""
+                contact_name = item.get("contact_name") or ""
+                full_name = item.get("full_name") or ""
+                payments.append(
+                    {
+                        "id": str(item.get("id", "")),
+                        "program": str(item.get("program", "")),
+                        "child_name": str(child_name),
+                        "contact_name": str(contact_name or full_name),
+                        "full_name": str(full_name or contact_name),
+                        "chat_id": item.get("chat_id"),
+                        "submitted_by": str(item.get("submitted_by", "")),
+                        "submitted_by_id": item.get("submitted_by_id"),
+                        "created_at": str(item.get("created_at", "")),
+                        "attachments": attachments,
+                    }
+                )
+        data["payments"] = payments
 
         cancellations = data.get("cancellations")
         if not isinstance(cancellations, list):
@@ -688,10 +1089,12 @@ class ConfettiTelegramBot:
 
                 entry: dict[str, Any] = {
                     "child_name": _text("child_name"),
+                    "school": _text("school"),
                     "class": _text("class"),
+                    "contact_name": _text("contact_name"),
                     "phone": _text("phone"),
                     "last_program": _text("last_program"),
-                    "last_time": _text("last_time"),
+                    "last_comment": _text("last_comment"),
                 }
 
                 registrations_payload = value.get("registrations")
@@ -710,9 +1113,12 @@ class ConfettiTelegramBot:
                             {
                                 "id": reg_id,
                                 "program": _item_text(item, "program"),
-                                "time": _item_text(item, "time"),
                                 "child_name": _item_text(item, "child_name"),
+                                "school": _item_text(item, "school"),
                                 "class": _item_text(item, "class"),
+                                "contact_name": _item_text(item, "contact_name"),
+                                "phone": _item_text(item, "phone"),
+                                "comment": _item_text(item, "comment"),
                                 "created_at": _item_text(item, "created_at"),
                             }
                         )
@@ -837,10 +1243,12 @@ class ConfettiTelegramBot:
         if isinstance(entry, dict):
             return {
                 "child_name": entry.get("child_name", ""),
+                "school": entry.get("school", ""),
                 "class": entry.get("class", ""),
+                "contact_name": entry.get("contact_name", ""),
                 "phone": entry.get("phone", ""),
                 "program": entry.get("last_program", ""),
-                "time": entry.get("last_time", ""),
+                "comment": entry.get("last_comment", ""),
             }
         return {}
 
@@ -862,15 +1270,18 @@ class ConfettiTelegramBot:
         changed = False
         for source_key, target_key in (
             ("child_name", "child_name"),
+            ("school", "school"),
             ("class", "class"),
+            ("contact_name", "contact_name"),
             ("phone", "phone"),
+            ("comment", "last_comment"),
         ):
             value = str(data.get(source_key, ""))
             if entry.get(target_key) != value:
                 entry[target_key] = value
                 changed = True
 
-        for source_key, target_key in (("program", "last_program"), ("time", "last_time")):
+        for source_key, target_key in (("program", "last_program"),):
             value = data.get(source_key)
             if value is None:
                 continue
@@ -920,9 +1331,12 @@ class ConfettiTelegramBot:
         snapshot = {
             "id": record_id_str,
             "program": str(record.get("program", "")),
-            "time": str(record.get("time", "")),
             "child_name": str(record.get("child_name", "")),
+            "school": str(record.get("school", "")),
             "class": str(record.get("class", "")),
+            "contact_name": str(record.get("contact_name", "")),
+            "phone": str(record.get("phone", "")),
+            "comment": str(record.get("comment", "")),
             "created_at": str(record.get("created_at", "")),
         }
         changed = False
@@ -946,8 +1360,14 @@ class ConfettiTelegramBot:
             if snapshot["program"] and entry.get("last_program") != snapshot["program"]:
                 entry["last_program"] = snapshot["program"]
                 changed = True
-            if snapshot["time"] and entry.get("last_time") != snapshot["time"]:
-                entry["last_time"] = snapshot["time"]
+            for field in ("child_name", "school", "class", "contact_name", "phone"):
+                value = snapshot.get(field, "")
+                if value and entry.get(field) != value:
+                    entry[field] = value
+                    changed = True
+            comment = snapshot.get("comment", "")
+            if comment and entry.get("last_comment") != comment:
+                entry["last_comment"] = comment
                 changed = True
         return changed
 
@@ -974,11 +1394,32 @@ class ConfettiTelegramBot:
                 changed = True
                 if registrations:
                     latest = registrations[-1]
-                    entry["last_program"] = str(latest.get("program", ""))
-                    entry["last_time"] = str(latest.get("time", ""))
+                    for field, target in (
+                        ("program", "last_program"),
+                        ("child_name", "child_name"),
+                        ("school", "school"),
+                        ("class", "class"),
+                        ("contact_name", "contact_name"),
+                        ("phone", "phone"),
+                        ("comment", "last_comment"),
+                    ):
+                        value = str(latest.get(field, ""))
+                        if entry.get(target) != value:
+                            entry[target] = value
+                            changed = True
                 else:
-                    entry["last_program"] = ""
-                    entry["last_time"] = ""
+                    for target in (
+                        "last_program",
+                        "child_name",
+                        "school",
+                        "class",
+                        "contact_name",
+                        "phone",
+                        "last_comment",
+                    ):
+                        if entry.get(target):
+                            entry[target] = ""
+                            changed = True
         return changed
 
     def _collect_user_registrations(
@@ -1012,10 +1453,26 @@ class ConfettiTelegramBot:
     def build_profile(self, chat: Any, user: Any | None = None) -> "UserProfile":
         """Return the appropriate profile for ``chat`` and optional ``user``."""
 
+        if isinstance(chat, Update):
+            update_obj = chat
+            chat = update_obj.effective_chat
+            if user is None:
+                user = update_obj.effective_user
+
         chat_id = _coerce_chat_id_from_object(chat)
-        if self._is_admin_identity(chat=chat, user=user):
-            return AdminProfile(chat_id=chat_id)
-        return UserProfile(chat_id=chat_id)
+        is_admin = self._is_admin_identity(chat=chat, user=user)
+        keyboard = self._admin_keyboard() if is_admin else self._user_keyboard()
+        if is_admin:
+            return AdminProfile(chat_id=chat_id, keyboard=keyboard)
+        return UserProfile(chat_id=chat_id, keyboard=keyboard)
+
+    def _user_keyboard(self) -> list[list[str]]:
+        return [list(row) for row in self.MAIN_MENU_LAYOUT]
+
+    def _admin_keyboard(self) -> list[list[str]]:
+        keyboard = self._user_keyboard()
+        keyboard.append([self.ADMIN_MENU_BUTTON])
+        return keyboard
 
     def is_admin_chat(self, chat: Any) -> bool:
         """Return ``True`` when ``chat`` belongs to an administrator."""
@@ -1026,6 +1483,11 @@ class ConfettiTelegramBot:
         """Return ``True`` when ``user`` is recognised as an administrator."""
 
         return self._is_admin_identity(user=user)
+
+    def broadcast_to_admins(self, update: Optional[Update] = None) -> set[int]:
+        """Return the set of administrator chat ids for broadcast helpers."""
+
+        return set(self._runtime_admin_ids)
 
     def _build_rate_limiter(self) -> Optional[AIORateLimiter]:  # type: ignore[name-defined]
         """Return an ``AIORateLimiter`` instance when possible."""
@@ -1063,108 +1525,197 @@ class ConfettiTelegramBot:
                     )
                 ],
                 states={
-                self.REGISTRATION_PROGRAM: [
-                    CallbackQueryHandler(
-                        self._registration_collect_program,
-                        pattern=r"^reg_program:\d+$",
-                    ),
-                    CallbackQueryHandler(
-                        self._registration_cancel_from_program,
-                        pattern=r"^reg_back:menu$",
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                    MessageHandler(
-                        filters.TEXT & ~filters.COMMAND,
-                        self._registration_prompt_program_buttons,
-                    ),
-                ],
-                self.REGISTRATION_CHILD_NAME: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._registration_back_to_program,
-                    ),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_child_name),
-                ],
-                self.REGISTRATION_CLASS: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._registration_back_to_child_name,
-                    ),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_class),
-                ],
-                self.REGISTRATION_PHONE: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._registration_collect_phone_text),
-                ],
-                self.REGISTRATION_CONFIRM_DETAILS: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.REGISTRATION_CONFIRM_SAVED_BUTTON)),
-                        self._registration_accept_saved_details,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.REGISTRATION_EDIT_DETAILS_BUTTON)),
-                        self._registration_request_details_update,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._registration_back_from_confirm,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                ],
-                self.REGISTRATION_TIME_DECISION: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.REGISTRATION_KEEP_TIME_BUTTON)),
-                        self._registration_use_saved_time,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.REGISTRATION_NEW_TIME_BUTTON)),
-                        self._registration_request_new_time,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._registration_back_from_time_decision,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                ],
-                self.REGISTRATION_TIME: [
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
-                        self._registration_back_from_time,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._time_regex()),
-                        self._registration_collect_time,
-                    ),
-                    MessageHandler(
-                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
-                        self._registration_cancel,
-                    ),
-                ],
-                self.REGISTRATION_PAYMENT: [
-                    MessageHandler(~filters.COMMAND, self._registration_collect_payment),
-                ],
+                    self.REGISTRATION_PROGRAM: [
+                        CallbackQueryHandler(
+                            self._registration_collect_program,
+                            pattern=r"^reg_program:\d+$",
+                        ),
+                        CallbackQueryHandler(
+                            self._registration_collect_program_variant,
+                            pattern=r"^reg_variant:\d+$",
+                        ),
+                        CallbackQueryHandler(
+                            self._registration_variant_back_to_program,
+                            pattern=r"^reg_variant:back$",
+                        ),
+                        CallbackQueryHandler(
+                            self._registration_cancel_from_program,
+                            pattern=r"^reg_back:menu$",
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_prompt_program_buttons,
+                        ),
+                    ],
+                    self.REGISTRATION_CHILD_NAME: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_program,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_child_name,
+                        ),
+                    ],
+                    self.REGISTRATION_SCHOOL: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_child_name,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_school,
+                        ),
+                    ],
+                    self.REGISTRATION_CLASS: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_school,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_class,
+                        ),
+                    ],
+                    self.REGISTRATION_CONTACT_NAME: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_class,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_contact_name,
+                        ),
+                    ],
+                    self.REGISTRATION_PHONE: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_contact,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_phone_text,
+                        ),
+                    ],
+                    self.REGISTRATION_COMMENT: [
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                            self._registration_cancel,
+                        ),
+                        MessageHandler(
+                            filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                            self._registration_back_to_phone,
+                        ),
+                        MessageHandler(
+                            filters.TEXT & ~filters.COMMAND,
+                            self._registration_collect_comment,
+                        ),
+                    ],
                 },
                 fallbacks=[
                     CommandHandler("cancel", self._registration_cancel),
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._registration_cancel,
+                    ),
+                ],
+                allow_reentry=True,
+            )
+
+        with warnings.catch_warnings():
+            if PTBUserWarning is not None:
+                warnings.simplefilter("ignore", PTBUserWarning)
+            payment_report = ConversationHandler(
+                entry_points=[
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.PAYMENT_REPORT_BUTTON)),
+                        self._start_payment_report,
+                    )
+                ],
+                states={
+                self.PAYMENT_REPORT_PROGRAM: [
+                    CallbackQueryHandler(
+                        self._payment_report_collect_program,
+                        pattern=r"^pay_program:\d+$",
+                    ),
+                    CallbackQueryHandler(
+                        self._payment_report_cancel_from_program,
+                        pattern=r"^pay_back:menu$",
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._payment_report_prompt_program,
+                    ),
+                ],
+                self.PAYMENT_REPORT_CHILD: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._payment_report_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._payment_report_back_to_program,
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._payment_report_collect_child_name,
+                    ),
+                ],
+                self.PAYMENT_REPORT_CONTACT: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._payment_report_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._payment_report_back_to_child,
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._payment_report_collect_contact_name,
+                    ),
+                ],
+                self.PAYMENT_REPORT_MEDIA: [
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._payment_report_cancel,
+                    ),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._payment_report_back_to_contact,
+                    ),
+                    MessageHandler(~filters.COMMAND, self._payment_report_collect_media),
+                ],
+                },
+                fallbacks=[
+                    CommandHandler("cancel", self._payment_report_cancel),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
+                        self._payment_report_cancel,
                     ),
                 ],
                 allow_reentry=True,
@@ -1182,17 +1733,32 @@ class ConfettiTelegramBot:
                 ],
                 states={
                 self.CANCELLATION_PROGRAM: [
+                    CallbackQueryHandler(
+                        self._cancellation_collect_program,
+                        pattern=r"^absence_program:\d+$",
+                    ),
+                    CallbackQueryHandler(
+                        self._cancellation_cancel_from_program,
+                        pattern=r"^absence_back:menu$",
+                    ),
                     MessageHandler(
                         filters.TEXT & ~filters.COMMAND,
-                        self._cancellation_collect_program,
+                        self._cancellation_prompt_program,
                     ),
+                ],
+                self.CANCELLATION_CONTACT: [
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._cancellation_cancel,
                     ),
-                ],
-                self.CANCELLATION_REASON: [
-                    MessageHandler(~filters.COMMAND, self._cancellation_collect_reason),
+                    MessageHandler(
+                        filters.Regex(self._exact_match_regex(self.BACK_BUTTON)),
+                        self._cancellation_back_to_program,
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self._cancellation_collect_contact,
+                    ),
                 ],
                 },
                 fallbacks=[
@@ -1209,17 +1775,17 @@ class ConfettiTelegramBot:
         application.add_handler(CommandHandler("menu", self._show_main_menu))
         application.add_handler(CommandHandler("admin", self._show_admin_menu))
         application.add_handler(conversation)
+        application.add_handler(payment_report)
         application.add_handler(cancellation)
+        application.add_handler(CallbackQueryHandler(self._about_show_french_variant, pattern=r"^about_variant:"))
         application.add_handler(CallbackQueryHandler(self._about_show_direction, pattern=r"^about:"))
         application.add_handler(CallbackQueryHandler(self._teacher_show_profile, pattern=r"^teacher:"))
+        application.add_handler(CallbackQueryHandler(self._admin_about_callback, pattern=r"^admin_about:"))
+        application.add_handler(CallbackQueryHandler(self._admin_teacher_callback, pattern=r"^admin_teacher:"))
         application.add_handler(MessageHandler(~filters.COMMAND, self._handle_message))
 
     def _exact_match_regex(self, text: str) -> str:
         return rf"^{re.escape(text)}$"
-
-    def _time_regex(self) -> str:
-        parts = [re.escape(option) for option in self.TIME_OF_DAY_OPTIONS]
-        return rf"^({'|'.join(parts)})$"
 
     # ------------------------------------------------------------------
     # Shared messaging helpers
@@ -1243,7 +1809,6 @@ class ConfettiTelegramBot:
             [self.ADMIN_EDIT_SCHEDULE_BUTTON],
             [self.ADMIN_EDIT_ABOUT_BUTTON],
             [self.ADMIN_EDIT_TEACHERS_BUTTON],
-            [self.ADMIN_EDIT_ALBUM_BUTTON],
             [self.ADMIN_EDIT_CONTACTS_BUTTON],
             [self.ADMIN_EDIT_VOCABULARY_BUTTON],
         ]
@@ -1405,36 +1970,26 @@ class ConfettiTelegramBot:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         data: dict[str, Any],
-        attachments: Optional[list[MediaAttachment]] = None,
     ) -> dict[str, Any]:
         chat = update.effective_chat
         user = update.effective_user
         record_id = data.get("id") or self._generate_registration_id()
-        program_label = data.get("program", "")
-        teacher = data.get("teacher") or self._resolve_program_teacher(str(program_label))
-        stored_media = data.get("payment_media", [])
-        if attachments and stored_media:
-            payment_media = stored_media
-        elif attachments:
-            payment_media = self._attachments_to_dicts(attachments)
-        else:
-            payment_media = stored_media
+        program_label = str(data.get("program", ""))
 
         record = {
             "id": record_id,
             "program": program_label,
-            "teacher": teacher,
             "child_name": data.get("child_name", ""),
+            "school": data.get("school", ""),
             "class": data.get("class", ""),
+            "contact_name": data.get("contact_name", ""),
             "phone": data.get("phone", ""),
-            "time": data.get("time", ""),
+            "comment": data.get("comment", ""),
             "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
             "chat_title": getattr(chat, "title", None) if chat else None,
             "submitted_by": getattr(user, "full_name", None) if user else None,
             "submitted_by_id": getattr(user, "id", None) if user else None,
             "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-            "payment_note": data.get("payment_note", ""),
-            "payment_media": payment_media,
         }
         registrations = self._application_data(context).setdefault("registrations", [])
         needs_save = False
@@ -1456,6 +2011,38 @@ class ConfettiTelegramBot:
 
         return record
 
+    def _store_payment_report(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        data: dict[str, Any],
+        attachments: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        chat = update.effective_chat
+        user = update.effective_user
+        record_id = self._generate_payment_id()
+        record = {
+            "id": record_id,
+            "program": data.get("program", ""),
+            "child_name": data.get("child_name", ""),
+            "contact_name": data.get("contact_name", ""),
+            "full_name": data.get("contact_name", ""),
+            "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
+            "submitted_by": getattr(user, "full_name", None) or "",
+            "submitted_by_id": getattr(user, "id", None),
+            "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "attachments": attachments,
+        }
+
+        payments = self._application_data(context).setdefault("payments", [])
+        if isinstance(payments, list):
+            payments.append(record)
+        else:
+            self._application_data(context)["payments"] = [record]
+
+        self._save_persistent_state()
+        return record
+
     def _find_registration_by_id(
         self, context: ContextTypes.DEFAULT_TYPE, registration_id: str
     ) -> Optional[dict[str, Any]]:
@@ -1466,6 +2053,22 @@ class ConfettiTelegramBot:
         if not target:
             return None
         for record in registrations:
+            if not isinstance(record, dict):
+                continue
+            if str(record.get("id")) == target:
+                return record
+        return None
+
+    def _find_payment_report_by_id(
+        self, context: ContextTypes.DEFAULT_TYPE, payment_id: str
+    ) -> Optional[dict[str, Any]]:
+        payments = self._application_data(context).get("payments")
+        if not isinstance(payments, list):
+            return None
+        target = payment_id.strip()
+        if not target:
+            return None
+        for record in payments:
             if not isinstance(record, dict):
                 continue
             if str(record.get("id")) == target:
@@ -1507,56 +2110,6 @@ class ConfettiTelegramBot:
             self._save_persistent_state()
 
 
-    async def _remove_registration_for_cancellation(
-        self,
-        context: ContextTypes.DEFAULT_TYPE,
-        cancellation: dict[str, Any],
-    ) -> Optional[dict[str, Any]]:
-        registrations = self._application_data(context).get("registrations")
-        if not isinstance(registrations, list):
-            return None
-
-        target_id = cancellation.get("registration_id")
-        target_id_str = str(target_id) if target_id is not None else None
-
-        match_index: Optional[int] = None
-        if target_id_str:
-            for index in range(len(registrations) - 1, -1, -1):
-                candidate = registrations[index]
-                if not isinstance(candidate, dict):
-                    continue
-                if str(candidate.get("id")) == target_id_str:
-                    match_index = index
-                    break
-
-        if match_index is None:
-            chat_id = cancellation.get("chat_id")
-            user_id = cancellation.get("submitted_by_id")
-            program = cancellation.get("program")
-            time_value = cancellation.get("time")
-            for index in range(len(registrations) - 1, -1, -1):
-                candidate = registrations[index]
-                if not isinstance(candidate, dict):
-                    continue
-                if chat_id is not None and candidate.get("chat_id") != chat_id:
-                    continue
-                if user_id is not None and candidate.get("submitted_by_id") != user_id:
-                    continue
-                if program and candidate.get("program") != program:
-                    continue
-                if time_value and candidate.get("time") != time_value:
-                    continue
-                match_index = index
-                break
-
-        if match_index is None:
-            return None
-
-        removed = registrations.pop(match_index)
-        self._remove_user_registration_snapshot(removed)
-
-        return removed
-
     def _describe_attachment(self, attachment: MediaAttachment) -> str:
         labels = {
             "photo": "Фото",
@@ -1571,66 +2124,6 @@ class ConfettiTelegramBot:
         if attachment.caption:
             return f"{title}: {attachment.caption}"
         return f"{title} во вложении"
-
-    async def _store_cancellation(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        data: dict[str, Any],
-        attachments: Optional[list[MediaAttachment]] = None,
-    ) -> None:
-        chat = update.effective_chat
-        user = update.effective_user
-        record = {
-            "program": data.get("program", ""),
-            "time": data.get("time", ""),
-            "child_name": data.get("child_name", ""),
-            "registration_id": data.get("registration_id"),
-            "details": data.get("details", ""),
-            "chat_id": _coerce_chat_id_from_object(chat) if chat else None,
-            "submitted_by": getattr(user, "full_name", None) if user else None,
-            "submitted_by_id": getattr(user, "id", None) if user else None,
-            "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-            "attachments": self._attachments_to_dicts(attachments or [])
-            if attachments
-            else data.get("evidence", []),
-        }
-        storage = self._application_data(context).setdefault("cancellations", [])
-        if isinstance(storage, list):
-            storage.append(record)
-        else:
-            self._application_data(context)["cancellations"] = [record]
-
-        removed = await self._remove_registration_for_cancellation(context, record)
-        if removed:
-            record["removed_registration_id"] = removed.get("id")
-            record["removed_child"] = removed.get("child_name")
-            record["removed_program"] = removed.get("program")
-            record["removed_time"] = removed.get("time")
-
-        self._save_persistent_state()
-
-        admin_message = (
-            "🚫 Отмена занятия\n"
-            f"📚 Программа: {record.get('program', '—')}\n"
-            f"🕒 Время: {record.get('time', '—')}\n"
-            f"👦 Участник: {record.get('child_name', '—')}\n"
-            f"📝 Комментарий: {record.get('details', '—')}\n"
-            f"👤 Отправил: {record.get('submitted_by', '—')}"
-        )
-        if removed:
-            admin_message += (
-                "\n🗂 Заявка удалена из таблицы: "
-                f"{removed.get('child_name', '—')} ({removed.get('program', '—')}, {removed.get('time', '—')})"
-            )
-        else:
-            admin_message += "\n⚠️ В таблице не нашлось записи, соответствующей этой отмене."
-        await self._notify_admins(
-            context,
-            admin_message,
-            media=self._dicts_to_attachments(record.get("attachments")),
-        )
-        context.user_data.pop("cancellation", None)
 
     async def _start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Send the greeting and display the main menu."""
@@ -1663,6 +2156,14 @@ class ConfettiTelegramBot:
                     remainder
                 )
                 handled = await self._send_registration_payment_media(
+                    update,
+                    context,
+                    registration_id,
+                    attachment_index=attachment_index,
+                )
+                if handled:
+                    return
+                handled = await self._send_payment_report_media(
                     update,
                     context,
                     registration_id,
@@ -1810,6 +2311,16 @@ class ConfettiTelegramBot:
         if isinstance(file_value, str) and file_value.strip():
             return file_value.strip()
 
+    def _select_photo_file_id(
+        self, attachments: Sequence[MediaAttachment]
+    ) -> Optional[str]:
+        for attachment in attachments:
+            if not isinstance(attachment, MediaAttachment):
+                continue
+            if attachment.kind == "photo" and attachment.file_id:
+                return attachment.file_id
+        return None
+
         return None
 
     async def _reply(
@@ -1885,6 +2396,19 @@ class ConfettiTelegramBot:
                                 )
                             except Exception as exc:  # pragma: no cover - Telegram runtime dependent
                                 LOGGER.debug("Failed to edit media: %s", exc)
+                                caption = media[0].caption if media[0].caption else None
+                                if caption:
+                                    try:
+                                        await callback.message.edit_text(
+                                            caption,
+                                            reply_markup=inline_markup,
+                                        )
+                                    except Exception as text_exc:  # pragma: no cover - Telegram runtime dependent
+                                        LOGGER.debug("Failed to edit media caption as text: %s", text_exc)
+                                    else:
+                                        markup_used = inline_markup is not None
+                                        media = []
+                                        target = callback.message
                             else:
                                 markup_used = inline_markup is not None
                                 media = []
@@ -2121,6 +2645,14 @@ class ConfettiTelegramBot:
         self._remember_chat(update, context)
         await self._purge_expired_registrations(context)
         context.user_data["registration"] = {}
+        if not self._program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("registration", None)
+            return ConversationHandler.END
         await self._reply(
             update,
             self._registration_program_prompt(),
@@ -2130,50 +2662,111 @@ class ConfettiTelegramBot:
         return self.REGISTRATION_PROGRAM
 
     def _program_inline_keyboard(self) -> "InlineKeyboardMarkup":
+        programs = self._program_catalog()
         buttons = [
-            [InlineKeyboardButton(program["label"], callback_data=f"reg_program:{index}")]
-            for index, program in enumerate(self.PROGRAMS)
+            [
+                InlineKeyboardButton(
+                    program.get("title", f"Направление {index + 1}"),
+                    callback_data=f"reg_program:{index}",
+                )
+            ]
+            for index, program in enumerate(programs)
         ]
-        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_back:menu")])
+        if buttons:
+            buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_back:menu")])
+        else:
+            buttons = [[InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_back:menu")]]
+        return InlineKeyboardMarkup(buttons)
+
+    def _compose_french_variant_label(self, base_label: str, option: dict[str, str]) -> str:
+        base = str(base_label or "").strip()
+        variant = str(option.get("stored") or option.get("button") or "").strip()
+        if not variant:
+            return base
+        if base and variant.lower().startswith(base.lower()):
+            return variant
+        if base:
+            return f"{base} — {variant}"
+        return variant
+
+    def _french_variant_keyboard(
+        self, variants: Sequence[dict[str, str]]
+    ) -> "InlineKeyboardMarkup":
+        buttons = [
+            [InlineKeyboardButton(option["button"], callback_data=f"reg_variant:{index}")]
+            for index, option in enumerate(variants)
+        ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="reg_variant:back")])
         return InlineKeyboardMarkup(buttons)
 
     def _about_inline_keyboard(self) -> "InlineKeyboardMarkup":
+        programs = self._program_catalog()
         buttons = [
-            [InlineKeyboardButton(program["label"], callback_data=f"about:{index}")]
-            for index, program in enumerate(self.PROGRAMS)
+            [
+                InlineKeyboardButton(
+                    program.get("title", f"Направление {index + 1}"),
+                    callback_data=f"about:{index}",
+                )
+            ]
+            for index, program in enumerate(programs)
         ]
-        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="about:home")])
+        if not buttons:
+            buttons = [[InlineKeyboardButton(self.BACK_BUTTON, callback_data="about:back")]]
+        return InlineKeyboardMarkup(buttons)
+
+    def _about_french_variant_keyboard(
+        self, program_index: int, variants: Sequence[dict[str, str]]
+    ) -> "InlineKeyboardMarkup":
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    option["button"],
+                    callback_data=f"about_variant:{program_index}:{index}",
+                )
+            ]
+            for index, option in enumerate(variants)
+        ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="about_variant:back")])
         return InlineKeyboardMarkup(buttons)
 
     def _teacher_inline_keyboard(self) -> "InlineKeyboardMarkup":
+        teachers = self._teacher_directory()
         buttons = [
-            [InlineKeyboardButton(teacher["name"], callback_data=f"teacher:{teacher['key']}")]
-            for teacher in self.TEACHERS
+            [
+                InlineKeyboardButton(
+                    teacher.get("name", f"Педагог {index + 1}"),
+                    callback_data=f"teacher:{teacher['id']}",
+                )
+            ]
+            for index, teacher in enumerate(teachers)
         ]
-        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="teacher:home")])
+        if not buttons:
+            buttons = [[InlineKeyboardButton(self.BACK_BUTTON, callback_data="teacher:back")]]
         return InlineKeyboardMarkup(buttons)
 
-    def _format_program_details(self, program: Dict[str, str]) -> str:
-        lines = [program["label"]]
-        description = program.get("description")
-        if description:
-            lines.append("")
-            lines.append(description)
-        for key in ("audience", "teacher", "schedule"):
-            value = program.get(key)
-            if value:
-                lines.append(value)
-        return "\n".join(line for line in lines if line is not None)
-
-    def _resolve_program_teacher(self, program_label: str) -> str:
-        for program in self.PROGRAMS:
-            if program.get("label") == program_label:
-                return program.get("teacher", "") or ""
-        return ""
+    def _format_program_details(self, program: Dict[str, Any]) -> str:
+        title = str(program.get("title", ""))
+        body = str(program.get("body", ""))
+        lines: list[str] = []
+        if title:
+            lines.append(title)
+        if body.strip():
+            if lines:
+                lines.append("")
+            lines.append(body.strip())
+        return "\n".join(lines).strip()
 
     async def _registration_prompt_program_buttons(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
+        if not self._program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("registration", None)
+            return ConversationHandler.END
         await self._reply(
             update,
             self._registration_program_prompt(),
@@ -2182,12 +2775,47 @@ class ConfettiTelegramBot:
         )
         return self.REGISTRATION_PROGRAM
 
+    async def _registration_prompt_french_variant(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        details: Optional[str] = None,
+        variants: Sequence[dict[str, str]],
+    ) -> None:
+        lines: list[str] = []
+        if details and details.strip():
+            lines.append("Вы выбрали программу:")
+            lines.append(details.strip())
+            lines.append("")
+        lines.append("Выберите подходящую группу для занятий.")
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=self._french_variant_keyboard(variants),
+            prefer_edit=update.callback_query is not None,
+        )
+
+    def _prefill_registration_defaults(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        defaults = self._get_user_defaults(update.effective_user)
+        if not defaults:
+            return
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("child_name", "school", "class", "contact_name", "phone", "comment"):
+            value = defaults.get(key)
+            if value and not registration.get(key):
+                registration[key] = value
+
     async def _registration_collect_program(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         query = update.callback_query
         message = update.message
 
         program_label = ""
-        selected_program: Optional[dict[str, str]] = None
+        details = ""
+        programs = self._program_catalog()
+        selected_program: Optional[dict[str, Any]] = None
         if query is not None:
             data = query.data or ""
             try:
@@ -2195,13 +2823,46 @@ class ConfettiTelegramBot:
             except (IndexError, ValueError):
                 await query.answer("Не удалось определить программу.", show_alert=True)
                 return self.REGISTRATION_PROGRAM
-            if not 0 <= index < len(self.PROGRAMS):
+            if not 0 <= index < len(programs):
                 await query.answer("Программа недоступна.", show_alert=True)
                 return self.REGISTRATION_PROGRAM
-            program = self.PROGRAMS[index]
+            program = programs[index]
             await query.answer()
-            program_label = program["label"]
-            details = self._format_program_details(program)
+            program_label = str(program.get("title", ""))
+            selected_program = program
+        else:
+            program_label = (message.text if message else "").strip()
+            program = next(
+                (item for item in programs if str(item.get("title", "")).strip() == program_label),
+                None,
+            )
+            if not program:
+                await self._registration_prompt_program_buttons(update, context)
+                return self.REGISTRATION_PROGRAM
+            selected_program = program
+        if selected_program is not None:
+            details = self._format_program_details(selected_program)
+        if query is None and details:
+            await self._reply(update, f"Вы выбрали программу:\n{details}")
+
+        registration = context.user_data.setdefault("registration", {})
+        registration.pop("teacher", None)
+
+        variants = self._program_variants(selected_program)
+
+        if variants:
+            registration["program_base"] = program_label
+            registration["program_variants"] = [dict(option) for option in variants]
+            registration.pop("program", None)
+            await self._registration_prompt_french_variant(
+                update,
+                context,
+                details=details,
+                variants=variants,
+            )
+            return self.REGISTRATION_PROGRAM
+
+        if query is not None and details:
             if query.message is not None:
                 try:  # pragma: no cover - depends on telegram runtime
                     await query.edit_message_text(f"Вы выбрали программу:\n{details}")
@@ -2213,118 +2874,202 @@ class ConfettiTelegramBot:
                     await self._reply(update, f"Вы выбрали программу:\n{details}")
             else:
                 await self._reply(update, f"Вы выбрали программу:\n{details}")
-            selected_program = program
-        else:
-            program_label = (message.text if message else "").strip()
-            program = next((item for item in self.PROGRAMS if item["label"] == program_label), None)
-            if not program:
-                await self._registration_prompt_program_buttons(update, context)
-                return self.REGISTRATION_PROGRAM
-            selected_program = program
 
-        registration = context.user_data.setdefault("registration", {})
+        registration.pop("program_base", None)
         registration["program"] = program_label
-        teacher = (selected_program or {}).get("teacher") or self._resolve_program_teacher(program_label)
-        if teacher:
-            registration["teacher"] = teacher
-        else:
-            registration.pop("teacher", None)
+        self._prefill_registration_defaults(update, context)
 
-        defaults = self._get_user_defaults(update.effective_user)
-        if defaults:
-            for key in ("child_name", "class", "phone"):
-                value = defaults.get(key)
-                if value:
-                    registration[key] = value
+        return await self._registration_prompt_child_name(update, context)
 
-        saved_time = ""
-        user_records = self._collect_user_registrations(update.effective_user, update.effective_chat)
-        for record in reversed(user_records):
-            if record.get("program") == program_label and record.get("time"):
-                saved_time = str(record.get("time"))
+    async def _registration_collect_program_variant(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        query = update.callback_query
+        if query is None:
+            return self.REGISTRATION_PROGRAM
+
+        data = query.data or ""
+        try:
+            index = int(data.split(":", 1)[1])
+        except (IndexError, ValueError):
+            await query.answer("Не удалось определить группу.", show_alert=True)
+            return self.REGISTRATION_PROGRAM
+        registration = context.user_data.setdefault("registration", {})
+        stored_variants = registration.get("program_variants")
+        variants_list: list[dict[str, str]] = []
+        if isinstance(stored_variants, list):
+            for option in stored_variants:
+                if isinstance(option, dict) and option.get("button"):
+                    variants_list.append({
+                        "button": str(option.get("button", "")),
+                        "stored": str(option.get("stored") or option.get("button") or ""),
+                    })
+        if not variants_list:
+            programs = self._program_catalog()
+            for program in programs:
+                program_variants = self._program_variants(program)
+                if not program_variants:
+                    continue
+                variants_list = [dict(option) for option in program_variants]
+                registration["program_variants"] = [dict(option) for option in program_variants]
                 break
-        if not saved_time and defaults:
-            saved_time = str(defaults.get("time", "") or "")
-        if saved_time:
-            registration["saved_time"] = saved_time
-            registration["saved_time_original"] = saved_time
-        else:
-            registration.pop("saved_time_original", None)
-            registration["saved_time"] = saved_time
+        if not 0 <= index < len(variants_list):
+            await query.answer("Группа недоступна.", show_alert=True)
+            return self.REGISTRATION_PROGRAM
 
-        if not registration.get("child_name"):
-            return await self._registration_prompt_child_name(update, context)
+        option = variants_list[index]
+        base_label = registration.pop("program_base", "")
+        if not base_label:
+            programs = self._program_catalog()
+            for program in programs:
+                variants = self._program_variants(program)
+                if any(
+                    candidate.get("button") == option.get("button")
+                    and candidate.get("stored") == option.get("stored")
+                    for candidate in variants
+                ):
+                    title_candidate = str(program.get("title", ""))
+                    if title_candidate:
+                        base_label = title_candidate
+                    break
+        if not base_label:
+            base_label = self.FRENCH_PROGRAM_LABEL
+        registration["program"] = self._compose_french_variant_label(base_label, option)
+        registration.pop("program_variants", None)
 
-        if not registration.get("class"):
-            return await self._registration_prompt_class(update, context, remind=True)
+        await self._reply(
+            update,
+            f"Вы выбрали программу:\n{registration['program']}",
+            prefer_edit=True,
+        )
 
-        if not registration.get("phone"):
-            return await self._registration_prompt_phone(update, context, remind=True)
+        self._prefill_registration_defaults(update, context)
 
-        return await self._registration_show_saved_details_prompt(update, context)
+        return await self._registration_prompt_child_name(update, context)
+
+    async def _registration_variant_back_to_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        query = update.callback_query
+        if query is not None:
+            await query.answer()
+        registration = context.user_data.setdefault("registration", {})
+        for key in (
+            "program",
+            "program_base",
+            "program_variants",
+            "teacher",
+            "child_name",
+            "school",
+            "class",
+            "contact_name",
+            "phone",
+            "comment",
+        ):
+            registration.pop(key, None)
+        return await self._registration_prompt_program_buttons(update, context)
 
     async def _registration_prompt_child_name(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
+        program = registration.get("program", "направление")
         if remind and registration.get("child_name"):
             message = (
-                f"Сейчас указано имя: {registration.get('child_name', '—')}.\n"
-                "Введите новое имя и фамилию ребёнка."
-            )
+                f"Сейчас указано имя: {registration.get('child_name', '—')}.")
+            message += "\nВведите имя и фамилию ребёнка для записи."
         else:
-            message = "Отлично! Напишите, пожалуйста, имя и фамилию ребёнка."
+            message = (
+                f"Отлично! Напишите, пожалуйста, имя и фамилию ребёнка для "
+                f"участия в программе «{program}»."
+            )
         await self._reply(update, message, reply_markup=self._back_keyboard())
         return self.REGISTRATION_CHILD_NAME
+
+    async def _registration_prompt_school(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        child_name = registration.get("child_name", "—")
+        if remind and registration.get("school"):
+            message = (
+                f"Участник: {child_name}.\n"
+                f"Сейчас указана школа: {registration.get('school', '—')}.")
+            message += "\nУточните школу ребёнка."
+        else:
+            message = (
+                f"Имя участника: {child_name}.\n"
+                "Укажите, пожалуйста, школу ребёнка."
+            )
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.REGISTRATION_SCHOOL
 
     async def _registration_prompt_class(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
         child_name = registration.get("child_name", "—")
+        school = registration.get("school", "—")
         if remind and registration.get("class"):
             message = (
                 f"Имя участника: {child_name}.\n"
-                f"Текущий класс: {registration.get('class', '—')}.\n"
-                "Укажите актуальный класс."
-            )
+                f"Школа: {school}.\n"
+                f"Текущий класс: {registration.get('class', '—')}.")
+            message += "\nУкажите актуальный класс."
         else:
-            message = f"Мы сохранили имя: {child_name}.\nУкажите, пожалуйста, класс."
+            message = (
+                f"Мы записали: {child_name}, школа {school}.\n"
+                "Напишите, пожалуйста, класс ребёнка."
+            )
         await self._reply(update, message, reply_markup=self._back_keyboard())
         return self.REGISTRATION_CLASS
+
+    async def _registration_prompt_contact_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        if remind and registration.get("contact_name"):
+            message = (
+                f"Сейчас указано контактное лицо: {registration.get('contact_name', '—')}.")
+            message += "\nВведите имя человека для связи."
+        else:
+            message = "Укажите имя контактного лица для связи."
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.REGISTRATION_CONTACT_NAME
 
     async def _registration_prompt_phone(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
-        child_name = registration.get("child_name", "—")
-        child_class = registration.get("class", "—")
+        contact = registration.get("contact_name", "—")
         if remind and registration.get("phone"):
             message = (
-                f"Имя и класс: {child_name} ({child_class}).\n"
-                f"Сейчас указан номер: {registration.get('phone', '—')}.\n"
-                "Введите номер телефона вручную."
-            )
+                f"Контактное лицо: {contact}.\n"
+                f"Сейчас указан номер: {registration.get('phone', '—')}.")
+            message += "\nВведите актуальный номер телефона."
         else:
             message = (
-                f"Мы сохранили имя и класс: {child_name} ({child_class}).\n"
-                "Введите номер телефона вручную."
+                f"Контактное лицо: {contact}.\n"
+                "Введите номер телефона для связи."
             )
         await self._reply(update, message, reply_markup=self._phone_keyboard())
         return self.REGISTRATION_PHONE
 
-    async def _registration_show_saved_details_prompt(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    async def _registration_prompt_comment(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
-        message = (
-            "Мы заполнили данные из вашей предыдущей заявки:\n"
-            f"👦 Имя: {registration.get('child_name', '—')} ({registration.get('class', '—')})\n"
-            f"📱 Телефон: {registration.get('phone', '—')}\n\n"
-            "Нажмите «Продолжить», если всё верно, или «Изменить данные», чтобы указать новые значения."
-        )
-        await self._reply(update, message, reply_markup=self._saved_details_keyboard())
-        return self.REGISTRATION_CONFIRM_DETAILS
+        if remind and registration.get("comment"):
+            message = (
+                f"Текущий комментарий: {registration.get('comment', '—')}.")
+            message += "\nЕсли комментарий не нужен, напишите «Нет»."
+        else:
+            message = (
+                "Добавьте комментарий или особые пожелания. Если нет особых пожеланий, "
+                "просто напишите: «Нет»."
+            )
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.REGISTRATION_COMMENT
 
     async def _registration_cancel_from_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -2345,7 +3090,17 @@ class ConfettiTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
-        for key in ("program", "teacher", "time", "saved_time", "saved_time_original", "proposed_time"):
+        for key in (
+            "program",
+            "program_base",
+            "teacher",
+            "child_name",
+            "school",
+            "class",
+            "contact_name",
+            "phone",
+            "comment",
+        ):
             registration.pop(key, None)
         await self._reply(
             update,
@@ -2357,54 +3112,85 @@ class ConfettiTelegramBot:
     async def _registration_back_to_child_name(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("child_name", "school", "class", "contact_name", "phone", "comment"):
+            registration.pop(key, None)
         return await self._registration_prompt_child_name(update, context, remind=True)
 
-    async def _registration_back_from_confirm(
+    async def _registration_back_to_school(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("school", "class", "contact_name", "phone", "comment"):
+            registration.pop(key, None)
+        return await self._registration_prompt_school(update, context, remind=True)
+
+    async def _registration_back_to_class(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("class", "contact_name", "phone", "comment"):
+            registration.pop(key, None)
+        return await self._registration_prompt_class(update, context, remind=True)
+
+    async def _registration_back_to_contact(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("contact_name", "phone", "comment"):
+            registration.pop(key, None)
+        return await self._registration_prompt_contact_name(update, context, remind=True)
+
+    async def _registration_back_to_phone(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        registration = context.user_data.setdefault("registration", {})
+        for key in ("phone", "comment"):
+            registration.pop(key, None)
         return await self._registration_prompt_phone(update, context, remind=True)
 
-    async def _registration_back_from_time_decision(
+    async def _registration_collect_child_name(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        registration.pop("proposed_time", None)
-        return await self._registration_show_saved_details_prompt(update, context)
-
-    async def _registration_back_from_time(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        registration.pop("time", None)
-        if registration.get("saved_time_original"):
-            registration["saved_time"] = registration["saved_time_original"]
-            return await self._prompt_time_of_day(update, context)
-        return await self._prompt_time_selection(update)
-
-    async def _registration_back_to_time(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        registration.pop("payment_media", None)
-        registration.pop("payment_note", None)
-        return await self._registration_back_from_time(update, context)
-
-    async def _registration_collect_child_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         text = (update.message.text or "").strip()
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
         if text == self.BACK_BUTTON:
             return await self._registration_back_to_program(update, context)
         context.user_data.setdefault("registration", {})["child_name"] = text
-        return await self._registration_prompt_class(update, context)
+        return await self._registration_prompt_school(update, context)
 
-    async def _registration_collect_class(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async def _registration_collect_school(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
         text = (update.message.text or "").strip()
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
         if text == self.BACK_BUTTON:
-            return await self._registration_prompt_child_name(update, context, remind=True)
+            return await self._registration_back_to_child_name(update, context)
+        context.user_data.setdefault("registration", {})["school"] = text
+        return await self._registration_prompt_class(update, context)
+
+    async def _registration_collect_class(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._registration_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._registration_back_to_school(update, context)
         context.user_data.setdefault("registration", {})["class"] = text
+        return await self._registration_prompt_contact_name(update, context)
+
+    async def _registration_collect_contact_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._registration_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._registration_back_to_class(update, context)
+        context.user_data.setdefault("registration", {})["contact_name"] = text
         return await self._registration_prompt_phone(update, context)
 
     def _back_keyboard(self, *, include_menu: bool = True) -> ReplyKeyboardMarkup:
@@ -2423,183 +3209,354 @@ class ConfettiTelegramBot:
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
-    def _saved_details_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [
-            [KeyboardButton(self.REGISTRATION_CONFIRM_SAVED_BUTTON)],
-            [KeyboardButton(self.REGISTRATION_EDIT_DETAILS_BUTTON)],
-            [KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)],
-        ]
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-
     def _payment_keyboard(self) -> ReplyKeyboardMarkup:
         keyboard = [[KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)]]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
-    def _saved_time_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [
-            [KeyboardButton(self.REGISTRATION_KEEP_TIME_BUTTON)],
-            [KeyboardButton(self.REGISTRATION_NEW_TIME_BUTTON)],
-            [KeyboardButton(self.BACK_BUTTON), KeyboardButton(self.MAIN_MENU_BUTTON)],
-        ]
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    def _absence_intro(self) -> str:
+        return (
+            "Выберите направление, по которому хотите сообщить об отсутствии.\n\n"
+            "⚠️К сожалению, в студии не предусмотрены компенсации и отработки, "
+            "так как языковые группы небольшие. Если занятие состоялось, оно подлежит оплате."
+        )
 
-    def _cancellation_keyboard(self, labels: list[str]) -> ReplyKeyboardMarkup:
-        keyboard = [[label] for label in labels]
-        keyboard.append([self.BACK_BUTTON, self.MAIN_MENU_BUTTON])
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    def _absence_program_keyboard(self) -> "InlineKeyboardMarkup":
+        programs = self._program_catalog()
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    program.get("title", f"Направление {index + 1}"),
+                    callback_data=f"absence_program:{index}",
+                )
+            ]
+            for index, program in enumerate(programs)
+        ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="absence_back:menu")])
+        return InlineKeyboardMarkup(buttons)
+
+    async def _absence_prompt_contact(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        await self._reply(
+            update,
+            "Напишите фамилию, имя и при необходимости отчество ребёнка, который "
+            "пропустит занятие.",
+            reply_markup=self._back_keyboard(),
+        )
+        return self.CANCELLATION_CONTACT
 
     async def _registration_collect_phone_text(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        text = update.message.text.strip()
-        if text == self.MAIN_MENU_BUTTON:
-            return await self._registration_cancel(update, context)
-        if text == self.BACK_BUTTON:
-            return await self._registration_prompt_class(update, context, remind=True)
-        context.user_data.setdefault("registration", {})["phone"] = text
-        return await self._prompt_time_of_day(update, context)
-
-    async def _registration_accept_saved_details(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        return await self._prompt_time_of_day(update, context)
-
-    async def _registration_use_saved_time(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        saved_time = str(
-            registration.get("proposed_time")
-            or registration.get("saved_time")
-            or registration.get("time", "")
-        ).strip()
-        if not saved_time:
-            return await self._registration_request_new_time(update, context)
-        registration["time"] = saved_time
-        registration.setdefault("saved_time_original", saved_time)
-        registration.pop("saved_time", None)
-        registration.pop("proposed_time", None)
-        return await self._prompt_payment_request(update, context)
-
-    async def _registration_request_new_time(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        original = registration.get("saved_time") or registration.get("saved_time_original")
-        if original:
-            registration["saved_time_original"] = original
-        registration.pop("proposed_time", None)
-        registration.pop("saved_time", None)
-        return await self._prompt_time_selection(update)
-
-    async def _registration_request_details_update(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        for key in ("child_name", "class", "phone"):
-            registration.pop(key, None)
-        return await self._registration_prompt_child_name(update, context, remind=True)
-
-    async def _prompt_time_of_day(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        registration = context.user_data.setdefault("registration", {})
-        saved_time = str(registration.get("saved_time", "")).strip()
-        if saved_time:
-            registration.setdefault("saved_time_original", saved_time)
-            registration["proposed_time"] = saved_time
-            message = (
-                "⏱️ Ранее вы выбирали время: "
-                f"{saved_time}.\n"
-                "🔁 Нажмите «То же время», чтобы оставить его, или «Другое время», чтобы выбрать новый слот."
-            )
-            await self._reply(
-                update,
-                message,
-                reply_markup=self._saved_time_keyboard(),
-            )
-            return self.REGISTRATION_TIME_DECISION
-        return await self._prompt_time_selection(update)
-
-    async def _prompt_time_selection(self, update: Update) -> int:
-        await self._reply(
-            update,
-            "Выберите удобное время занятий.",
-            reply_markup=self._time_keyboard(),
-        )
-        return self.REGISTRATION_TIME
-
-    def _time_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [[option] for option in self.TIME_OF_DAY_OPTIONS]
-        keyboard.append([self.BACK_BUTTON, self.MAIN_MENU_BUTTON])
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-
-    async def _registration_collect_time(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         text = (update.message.text or "").strip()
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
         if text == self.BACK_BUTTON:
-            return await self._registration_back_from_time(update, context)
-        registration = context.user_data.setdefault("registration", {})
-        registration["time"] = text
-        if not registration.get("saved_time_original"):
-            registration["saved_time_original"] = text
-        registration.pop("saved_time", None)
-        registration.pop("proposed_time", None)
-        return await self._prompt_payment_request(update, context)
+            return await self._registration_back_to_contact(update, context)
+        context.user_data.setdefault("registration", {})["phone"] = text
+        return await self._registration_prompt_comment(update, context)
 
-    async def _prompt_payment_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        instructions = self._get_content(context).payment
-        message = (
-            "💳 Отправьте подтверждение оплаты — нам нужно фото или скан квитанции.\n\n"
-            "⚠️ Без подтверждения оплаты заявка не будет отправлена администраторам."
+    async def _registration_collect_comment(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._registration_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._registration_back_to_phone(update, context)
+        context.user_data.setdefault("registration", {})["comment"] = text
+        await self._send_registration_summary(update, context)
+        await self._show_main_menu(update, context)
+        return ConversationHandler.END
+
+    # ------------------------------------------------------------------
+    # Payment report conversation
+
+    def _payment_report_intro(self) -> str:
+        return "Выберите направление, которое оплатили."
+
+    def _payment_program_catalog(self) -> list[dict[str, str]]:
+        return [{"title": title} for title in self.PAYMENT_PROGRAM_OPTIONS]
+
+    def _payment_program_keyboard(self) -> "InlineKeyboardMarkup":
+        programs = self._payment_program_catalog()
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    program.get("title", f"Направление {index + 1}"),
+                    callback_data=f"pay_program:{index}",
+                )
+            ]
+            for index, program in enumerate(programs)
+        ]
+        buttons.append([InlineKeyboardButton(self.BACK_BUTTON, callback_data="pay_back:menu")])
+        return InlineKeyboardMarkup(buttons)
+
+    async def _start_payment_report(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        self._remember_chat(update, context)
+        context.user_data["payment_report"] = {}
+        if not self._payment_program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("payment_report", None)
+            return ConversationHandler.END
+        await self._reply(
+            update,
+            self._payment_report_intro(),
+            reply_markup=self._payment_program_keyboard(),
         )
-        if instructions.text:
-            message += "\n\n" + instructions.text
+        return self.PAYMENT_REPORT_PROGRAM
+
+    async def _payment_report_prompt_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        if not self._payment_program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("payment_report", None)
+            return ConversationHandler.END
+        await self._reply(
+            update,
+            self._payment_report_intro(),
+            reply_markup=self._payment_program_keyboard(),
+            prefer_edit=update.callback_query is not None,
+        )
+        return self.PAYMENT_REPORT_PROGRAM
+
+    async def _payment_report_collect_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        query = update.callback_query
+        if query is None:
+            return await self._payment_report_prompt_program(update, context)
+
+        data = query.data or ""
+        try:
+            index = int(data.split(":", 1)[1])
+        except (IndexError, ValueError):
+            await query.answer("Не удалось определить направление.", show_alert=True)
+            return self.PAYMENT_REPORT_PROGRAM
+
+        programs = self._payment_program_catalog()
+        if not 0 <= index < len(programs):
+            await query.answer("Направление недоступно.", show_alert=True)
+            return self.PAYMENT_REPORT_PROGRAM
+
+        program = programs[index]
+        await query.answer()
+        title = str(program.get("title", f"Направление {index + 1}"))
+        try:  # pragma: no cover - depends on telegram runtime
+            await query.edit_message_reply_markup(None)
+        except Exception:
+            pass
+        data = context.user_data.setdefault("payment_report", {})
+        data["program"] = title
+        for field in ("child_name", "contact_name"):
+            data.pop(field, None)
+        return await self._payment_report_prompt_child_name(update, context)
+
+    async def _payment_report_cancel_from_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        query = update.callback_query
+        if query is not None:
+            await query.answer()
+        await self._payment_report_cancel(update, context)
+        return ConversationHandler.END
+
+    async def _payment_report_prompt_child_name(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        remind: bool = False,
+    ) -> int:
+        data = context.user_data.setdefault("payment_report", {})
+        program = data.get("program", "направление")
+        if remind and data.get("child_name"):
+            message = (
+                f"Сейчас указано имя ребёнка: {data.get('child_name', '—')}.\n"
+                "Введите фамилию и имя ребёнка ещё раз."
+            )
+        else:
+            message = (
+                f"Вы выбрали: {program}.\n"
+                "Напишите, пожалуйста, фамилию и имя ребёнка."
+            )
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.PAYMENT_REPORT_CHILD
+
+    async def _payment_report_collect_child_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._payment_report_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._payment_report_back_to_program(update, context)
+        if not text:
+            await self._reply(
+                update,
+                "Пожалуйста, укажите фамилию и имя ребёнка.",
+                reply_markup=self._back_keyboard(),
+            )
+            return self.PAYMENT_REPORT_CHILD
+        context.user_data.setdefault("payment_report", {})["child_name"] = text
+        return await self._payment_report_prompt_contact_name(update, context)
+
+    async def _payment_report_back_to_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("payment_report", {})
+        for key in ("child_name", "contact_name", "program"):
+            data.pop(key, None)
+        return await self._payment_report_prompt_program(update, context)
+
+    async def _payment_report_prompt_contact_name(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        remind: bool = False,
+    ) -> int:
+        data = context.user_data.setdefault("payment_report", {})
+        if remind and data.get("contact_name"):
+            message = (
+                f"Сейчас указано контактное лицо: {data.get('contact_name', '—')}.\n"
+                "Введите имя контактного лица ещё раз."
+            )
+        else:
+            message = "Напишите, пожалуйста, имя контактного лица."
+        await self._reply(update, message, reply_markup=self._back_keyboard())
+        return self.PAYMENT_REPORT_CONTACT
+
+    async def _payment_report_collect_contact_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
+        if text == self.MAIN_MENU_BUTTON:
+            return await self._payment_report_cancel(update, context)
+        if text == self.BACK_BUTTON:
+            return await self._payment_report_back_to_child(update, context)
+        if not text:
+            await self._reply(
+                update,
+                "Пожалуйста, укажите имя контактного лица.",
+                reply_markup=self._back_keyboard(),
+            )
+            return self.PAYMENT_REPORT_CONTACT
+        context.user_data.setdefault("payment_report", {})["contact_name"] = text
+        return await self._payment_report_prompt_media(update, context)
+
+    async def _payment_report_back_to_child(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        context.user_data.setdefault("payment_report", {}).pop("contact_name", None)
+        return await self._payment_report_prompt_child_name(update, context, remind=True)
+
+    async def _payment_report_prompt_media(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        message = (
+            "Загрузите фото или скан подтверждения оплаты.\n\n"
+            "Можно прикрепить несколько изображений, если нужно."
+        )
         await self._reply(
             update,
             message,
             reply_markup=self._payment_keyboard(),
-            media=instructions.media or None,
         )
-        return self.REGISTRATION_PAYMENT
+        return self.PAYMENT_REPORT_MEDIA
 
-    async def _registration_collect_payment(
+    async def _payment_report_back_to_contact(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        data = context.user_data.setdefault("registration", {})
+        context.user_data.setdefault("payment_report", {}).pop("attachments", None)
+        return await self._payment_report_prompt_contact_name(update, context, remind=True)
+
+    async def _payment_report_collect_media(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("payment_report", {})
         text, attachments = self._extract_message_payload(update.message)
 
         if text == self.MAIN_MENU_BUTTON:
-            return await self._registration_cancel(update, context)
+            return await self._payment_report_cancel(update, context)
 
         if text == self.BACK_BUTTON:
-            return await self._registration_back_to_time(update, context)
-
-        if text:
-            data["payment_note"] = text
+            return await self._payment_report_back_to_contact(update, context)
 
         if not attachments:
             await self._reply(
                 update,
-                "📎 Пожалуйста, прикрепите фото чека или квитанции, чтобы завершить запись.",
+                "Пожалуйста, прикрепите фото подтверждения оплаты.",
                 reply_markup=self._payment_keyboard(),
             )
-            return self.REGISTRATION_PAYMENT
+            return self.PAYMENT_REPORT_MEDIA
 
         if not any(item.kind == "photo" for item in attachments):
             await self._reply(
                 update,
-                "🖼 Отправьте хотя бы одну фотографию подтверждения оплаты.",
+                "Нужно отправить хотя бы одну фотографию чека или квитанции.",
                 reply_markup=self._payment_keyboard(),
             )
-            return self.REGISTRATION_PAYMENT
+            return self.PAYMENT_REPORT_MEDIA
 
-        data["payment_media"] = await self._serialise_payment_media(context, attachments)
-
-        await self._send_registration_summary(update, context, media=attachments or None)
-        await self._show_main_menu(update, context)
+        serialised = await self._serialise_payment_media(context, attachments)
+        data["attachments"] = serialised
+        await self._complete_payment_report(update, context, attachments)
         return ConversationHandler.END
+
+    async def _payment_report_cancel(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        context.user_data.pop("payment_report", None)
+        await self._reply(
+            update,
+            "Сообщение об оплате отменено.",
+            reply_markup=self._main_menu_markup_for(update, context),
+        )
+        return ConversationHandler.END
+
+    async def _complete_payment_report(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        attachments: list[MediaAttachment],
+    ) -> None:
+        data = context.user_data.setdefault("payment_report", {})
+        stored = self._store_payment_report(update, context, data, data.get("attachments", []))
+        confirmation = (
+            "Спасибо! Мы зафиксировали подтверждение оплаты.\n\n"
+            f"📚 Направление: {stored.get('program', '—')}\n"
+            f"👦 Ребёнок: {stored.get('child_name', '—')}\n"
+            f"👤 Контактное лицо: {stored.get('contact_name', '—')}\n"
+            f"🕒 Отправлено: {stored.get('created_at', '—')}"
+        )
+        await self._reply(
+            update,
+            confirmation,
+            reply_markup=self._main_menu_markup_for(update, context),
+        )
+        admin_message = (
+            "💳 Новое подтверждение оплаты\n"
+            f"📚 Направление: {stored.get('program', '—')}\n"
+            f"👦 Ребёнок: {stored.get('child_name', '—')}\n"
+            f"👤 Контактное лицо: {stored.get('contact_name', '—')}\n"
+            f"🕒 Отправлено: {stored.get('created_at', '—')}\n"
+            f"👤 Отправил: {stored.get('submitted_by', '—')}"
+        )
+        await self._notify_admins(context, admin_message, media=attachments or None)
+        context.user_data.pop("payment_report", None)
+        await self._show_main_menu(update, context)
 
     async def _registration_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data.pop("registration", None)
@@ -2615,146 +3572,132 @@ class ConfettiTelegramBot:
 
     async def _start_cancellation(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         self._remember_chat(update, context)
-        await self._purge_expired_registrations(context)
-        records = self._collect_user_registrations(update.effective_user, update.effective_chat)
-        if not records:
+        context.user_data["absence"] = {}
+        if not self._program_catalog():
             await self._reply(
                 update,
-                "ℹ️ Активных записей не найдено.",
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
                 reply_markup=self._main_menu_markup_for(update, context),
             )
-            await self._show_main_menu(update, context)
+            context.user_data.pop("absence", None)
             return ConversationHandler.END
-
-        sorted_records = sorted(
-            records,
-            key=lambda item: self._parse_record_timestamp(item.get("created_at")) or datetime.min,
-            reverse=True,
-        )
-        options: dict[str, dict[str, Any]] = {}
-        counts: dict[str, int] = {}
-        for record in sorted_records:
-            base_label = self._format_cancellation_option(record)
-            index = counts.get(base_label, 0)
-            counts[base_label] = index + 1
-            label = base_label if index == 0 else f"{base_label} ({index + 1})"
-            options[label] = record
-
-        context.user_data["cancellation"] = {"options": options}
-        message = (
-            "❗️ Выберите занятие, которое хотите отменить.\n\n"
-            "⚠️ Оплата не возвращается — средства остаются на балансе студии."
-        )
         await self._reply(
             update,
-            message,
-            reply_markup=self._cancellation_keyboard(list(options.keys())),
+            self._absence_intro(),
+            reply_markup=self._absence_program_keyboard(),
         )
         return self.CANCELLATION_PROGRAM
 
-    def _format_cancellation_option(self, record: dict[str, Any]) -> str:
-        program = str(record.get("program", "")) or "Без программы"
-        time = str(record.get("time", ""))
-        child = str(record.get("child_name", ""))
-        record_id = str(record.get("id", ""))
-        suffix = f"#{record_id[-4:]}" if record_id else ""
-        components = [program]
-        if time:
-            components.append(time)
-        if child:
-            components.append(child)
-        if suffix:
-            components.append(suffix)
-        return " • ".join(components)
+    async def _cancellation_prompt_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        if not self._program_catalog():
+            await self._reply(
+                update,
+                "Список направлений временно недоступен. Пожалуйста, свяжитесь с администратором.",
+                reply_markup=self._main_menu_markup_for(update, context),
+            )
+            context.user_data.pop("absence", None)
+            return ConversationHandler.END
+        await self._reply(
+            update,
+            self._absence_intro(),
+            reply_markup=self._absence_program_keyboard(),
+            prefer_edit=update.callback_query is not None,
+        )
+        return self.CANCELLATION_PROGRAM
 
     async def _cancellation_collect_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        payload = update.message.text.strip()
-        if payload == self.MAIN_MENU_BUTTON:
-            return await self._cancellation_cancel(update, context)
-        if payload == self.BACK_BUTTON:
-            return await self._cancellation_cancel(update, context)
+        query = update.callback_query
+        if query is None or not query.data:
+            return await self._cancellation_prompt_program(update, context)
+        try:
+            index = int(query.data.split(":", 1)[1])
+        except (IndexError, ValueError):
+            return await self._cancellation_prompt_program(update, context)
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            return await self._cancellation_prompt_program(update, context)
 
-        data = context.user_data.setdefault("cancellation", {})
-        options: dict[str, dict[str, Any]] = data.get("options", {})  # type: ignore[assignment]
-        record = options.get(payload)
-        if record is None:
-            await self._reply(
-                update,
-                "Пожалуйста, выберите запись из списка.",
-                reply_markup=self._cancellation_keyboard(list(options.keys())),
-            )
-            return self.CANCELLATION_PROGRAM
+        await query.answer()
 
-        data["selected_registration"] = record
-        data["program"] = record.get("program", "")
-        data["time"] = record.get("time", "")
-        data["child_name"] = record.get("child_name", "")
-        data["registration_id"] = record.get("id")
-        await self._reply(
-            update,
-            "📅 Напишите дату и время пропуска, а также короткий комментарий.",
-            reply_markup=self._back_keyboard(),
-        )
-        return self.CANCELLATION_REASON
+        program = programs[index]
+        data = context.user_data.setdefault("absence", {})
+        data.clear()
+        data["program"] = str(program.get("title", ""))
 
-    async def _cancellation_restart_program(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        options: dict[str, dict[str, Any]],
-    ) -> int:
-        data = context.user_data.setdefault("cancellation", {})
-        data.pop("details", None)
-        data.pop("evidence", None)
-        message = (
-            "❗️ Выберите занятие, которое хотите отменить.\n\n"
-            "⚠️ Оплата не возвращается — средства остаются на балансе студии."
-        )
-        await self._reply(
-            update,
-            message,
-            reply_markup=self._cancellation_keyboard(list(options.keys())),
-        )
-        return self.CANCELLATION_PROGRAM
+        try:  # pragma: no cover - depends on telegram runtime
+            await query.edit_message_reply_markup(None)
+        except Exception:
+            pass
 
-    async def _cancellation_collect_reason(
+        return await self._absence_prompt_contact(update, context)
+
+    async def _cancellation_cancel_from_program(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        data = context.user_data.setdefault("cancellation", {})
-        text, attachments = self._extract_message_payload(update.message)
+        return await self._cancellation_cancel(update, context)
 
+    async def _cancellation_back_to_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("absence", {})
+        for key in ("child_name",):
+            data.pop(key, None)
+        data.pop("program", None)
+        return await self._cancellation_prompt_program(update, context)
+
+    async def _cancellation_collect_contact(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        text = (update.message.text or "").strip()
         if text == self.MAIN_MENU_BUTTON:
             return await self._cancellation_cancel(update, context)
         if text == self.BACK_BUTTON:
-            options: dict[str, dict[str, Any]] = data.get("options", {})  # type: ignore[assignment]
-            return await self._cancellation_restart_program(update, context, options)
+            return await self._cancellation_back_to_program(update, context)
 
-        if attachments:
-            data["evidence"] = self._attachments_to_dicts(attachments)
-        data["details"] = text or ""
+        if not text:
+            await self._reply(
+                update,
+                "Пожалуйста, укажите фамилию и имя ребёнка, который пропустит занятие.",
+                reply_markup=self._back_keyboard(),
+            )
+            return self.CANCELLATION_CONTACT
 
-        await self._store_cancellation(update, context, data, attachments or None)
-        context.user_data.pop("cancellation", None)
+        data = context.user_data.setdefault("absence", {})
+        data["child_name"] = text
+        return await self._complete_absence_report(update, context)
 
-        confirmation = (
-            "✅ Отмена зафиксирована.\n"
-            "ℹ️ Средства за пропущенное занятие не возвращаются, но мы учли ваш комментарий."
-        )
+    async def _complete_absence_report(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        data = context.user_data.setdefault("absence", {})
+
+        confirmation = "✅ Спасибо! Мы зафиксировали отсутствие."
         await self._reply(
             update,
             confirmation,
             reply_markup=self._main_menu_markup_for(update, context),
         )
+
+        admin_message = (
+            "🚨 Сообщение об отсутствии\n"
+            f"📚 Направление: {data.get('program', '—')}\n"
+            f"👦 Ребёнок: {data.get('child_name', '—')}"
+        )
+        await self._notify_admins(context, admin_message)
+
+        context.user_data.pop("absence", None)
         await self._show_main_menu(update, context)
         return ConversationHandler.END
 
     async def _cancellation_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        context.user_data.pop("cancellation", None)
+        context.user_data.pop("absence", None)
         await self._reply(
             update,
-            "Отмена занятия не отправлена.",
+            "Сообщение об отсутствии не отправлено.",
             reply_markup=self._main_menu_markup_for(update, context),
         )
         return ConversationHandler.END
@@ -2763,48 +3706,1151 @@ class ConfettiTelegramBot:
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
-        *,
-        media: Optional[list[MediaAttachment]] = None,
     ) -> None:
         data = context.user_data.get("registration", {})
-        attachments = media or self._dicts_to_attachments(data.get("payment_media"))
-        payment_note = data.get("payment_note")
-        payment_status = "✅ Оплата подтверждена" if attachments else "⏳ Оплата ожидается"
+        program = data.get("program", "—")
+        child = data.get("child_name", "—")
+        school = data.get("school", "—")
+        child_class = data.get("class", "—")
+        contact = data.get("contact_name", "—")
+        phone = data.get("phone", "—")
+        comment = data.get("comment", "—")
+        summary_lines = [
+            "Заявка отправлена!",
+            "",
+            f"📚 Программа: {program}",
+            f"👦 Ребёнок: {child}",
+            f"🏫 Школа: {school}",
+            f"🎓 Класс: {child_class}",
+            f"👤 Контактное лицо: {contact}",
+            f"📱 Телефон: {phone}",
+        ]
+        if comment and comment.strip():
+            summary_lines.append(f"📝 Комментарий: {comment}")
+        summary_lines.append("")
+        summary_lines.append("Мы свяжемся с вами в ближайшее время.")
 
-        teacher_line = data.get("teacher") or self._resolve_program_teacher(str(data.get("program", "")))
-
-        summary = (
-            "Ваша заявка принята!\n\n"
-            f"👦 Участник: {data.get('child_name', '—')} ({data.get('class', '—')})\n"
-            f"📱 Телефон: {data.get('phone', '—')}\n"
-            f"🕒 Время: {data.get('time', '—')}\n"
-            f"📚 Программа: {data.get('program', '—')}\n"
-            f"💳 {payment_status}\n"
+        await self._reply(
+            update,
+            "\n".join(summary_lines),
+            reply_markup=self._main_menu_markup_for(update, context),
         )
-        if teacher_line:
-            summary += f"{teacher_line}\n"
-        if payment_note:
-            summary += f"📝 Комментарий: {payment_note}\n"
-        summary += "\nМы свяжемся с вами в ближайшее время."
+        record = self._store_registration(update, context, data)
 
-        await self._reply(update, summary, reply_markup=self._main_menu_markup_for(update, context))
-        record = self._store_registration(update, context, data, attachments)
+        admin_lines = [
+            "🆕 Новая заявка",
+            f"📚 Программа: {program}",
+            f"👦 Ребёнок: {child}",
+            f"🏫 Школа: {school}",
+            f"🎓 Класс: {child_class}",
+            f"👤 Контактное лицо: {contact}",
+            f"📱 Телефон: {phone}",
+        ]
+        if comment and comment.strip():
+            admin_lines.append(f"📝 Комментарий: {comment}")
 
-        admin_message = (
-            "🆕 Новая заявка\n"
-            f"📚 Программа: {data.get('program', '—')}\n"
-            f"👦 Участник: {data.get('child_name', '—')} ({data.get('class', '—')})\n"
-            f"📱 Телефон: {data.get('phone', '—')}\n"
-            f"🕒 Время: {data.get('time', '—')}\n"
-            f"💳 Статус оплаты: {'получено' if attachments else 'ожидается'}"
-        )
-        if teacher_line:
-            admin_message += f"\n{teacher_line}"
-        if payment_note:
-            admin_message += f"\n📝 Комментарий: {payment_note}"
-
-        await self._notify_admins(context, admin_message, media=attachments or None)
+        await self._notify_admins(context, "\n".join(admin_lines))
         context.user_data.pop("registration", None)
+
+    async def _admin_show_about_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        notice: Optional[str] = None,
+        prefer_edit: bool = False,
+    ) -> None:
+        programs = self._program_catalog()
+        lines: list[str] = []
+        if notice:
+            lines.append(notice)
+            lines.append("")
+        lines.append("Управление разделом «О студии».")
+        if programs:
+            lines.append("Выберите действие, чтобы обновить вступление или направления.")
+        else:
+            lines.append("Список направлений пуст — добавьте новое направление.")
+        keyboard: list[list[InlineKeyboardButton]] = [
+            [InlineKeyboardButton("📝 Редактировать вступление", callback_data="admin_about:intro")],
+            [InlineKeyboardButton("➕ Добавить направление", callback_data="admin_about:add")],
+        ]
+        for index, program in enumerate(programs):
+            title = program.get("title") or f"Направление {index + 1}"
+            keyboard.append(
+                [InlineKeyboardButton(title, callback_data=f"admin_about:edit:{index}")]
+            )
+        keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data="admin_about:back")])
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            prefer_edit=prefer_edit or update.callback_query is not None,
+        )
+
+    async def _admin_show_program_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        notice: Optional[str] = None,
+        prefer_edit: bool = False,
+    ) -> None:
+        programs = self._program_catalog()
+        effective_prefer_edit = prefer_edit or update.callback_query is not None
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(
+                update,
+                context,
+                notice="Направление не найдено.",
+                prefer_edit=effective_prefer_edit,
+            )
+            return
+        program = programs[index]
+        title = program.get("title") or f"Направление {index + 1}"
+        body = str(program.get("body", ""))
+        if program.get("photo_file_id"):
+            photo_note = "Используется загруженное фото."
+        elif program.get("photo_url"):
+            photo_note = "Используется ссылка на фото."
+        else:
+            photo_note = "Фото не добавлено."
+        lines: list[str] = []
+        if notice:
+            lines.append(notice)
+            lines.append("")
+        lines.append(f"Название: {title or '—'}")
+        if body.strip():
+            lines.append("")
+            lines.append(body.strip())
+        else:
+            lines.append("")
+            lines.append("Описание пока не заполнено.")
+        lines.append("")
+        lines.append(f"📷 {photo_note}")
+        lines.append("")
+        lines.append("Выберите действие:")
+        keyboard = [
+            [InlineKeyboardButton("✏️ Изменить название", callback_data=f"admin_about:rename:{index}")],
+            [InlineKeyboardButton("📝 Обновить описание", callback_data=f"admin_about:body:{index}")],
+            [InlineKeyboardButton("🖼 Обновить фото", callback_data=f"admin_about:photo:{index}")],
+            [InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_about:delete:{index}")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="admin_about:menu")],
+        ]
+        if self._program_variants(program):
+            keyboard.insert(
+                1,
+                [InlineKeyboardButton("🎯 Управлять группами", callback_data=f"admin_about:variants:{index}")],
+            )
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            prefer_edit=effective_prefer_edit,
+        )
+
+    async def _admin_show_program_variants(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        notice: Optional[str] = None,
+        prefer_edit: bool = False,
+    ) -> None:
+        programs = self._program_catalog()
+        effective_prefer_edit = prefer_edit or update.callback_query is not None
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(
+                update,
+                context,
+                notice="Направление не найдено.",
+                prefer_edit=effective_prefer_edit,
+            )
+            return
+        program = programs[index]
+        variants = self._program_variants(program)
+        if not variants:
+            await self._admin_show_program_detail(
+                update,
+                context,
+                index,
+                notice="Для этого направления пока нет отдельных групп.",
+                prefer_edit=effective_prefer_edit,
+            )
+            return
+
+        title = program.get("title") or f"Направление {index + 1}"
+        lines: list[str] = []
+        if notice:
+            lines.append(notice)
+            lines.append("")
+        lines.append(f"Группы направления «{title}».")
+        lines.append("Выберите вариант, чтобы обновить название кнопки и подпись для таблиц.")
+        lines.append("")
+        for option in variants:
+            button_label = option.get("button") or "Без названия"
+            stored_label = option.get("stored") or button_label
+            if stored_label == button_label:
+                lines.append(f"• {button_label}")
+            else:
+                lines.append(f"• {button_label} (в таблицах: {stored_label})")
+
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    option.get("button") or f"Группа {idx + 1}",
+                    callback_data=f"admin_about:variant:{index}:{idx}",
+                )
+            ]
+            for idx, option in enumerate(variants)
+        ]
+        keyboard.append(
+            [InlineKeyboardButton("⬅️ Назад", callback_data=f"admin_about:edit:{index}")]
+        )
+
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            prefer_edit=effective_prefer_edit,
+        )
+
+    async def _admin_prompt_add_program(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        context.chat_data["pending_admin_action"] = {"type": "add_program"}
+        message = (
+            "Отправьте новое направление.\n"
+            "Первая строка — название, далее описание.\n"
+            "Можно приложить одно фото."
+        )
+        await self._reply(
+            update,
+            message + self.ADMIN_CANCEL_PROMPT,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_program_rename(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return
+        title = programs[index].get("title") or f"Направление {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "rename_program",
+            "index": index,
+        }
+        message = (
+            f"Введите новое название для направления «{title}»."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_program_body(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return
+        title = programs[index].get("title") or f"Направление {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "program_body",
+            "index": index,
+        }
+        message = (
+            f"Отправьте новый текст для направления «{title}».\n"
+            "Чтобы очистить описание, напишите «Удалить»."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_program_photo(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return
+        title = programs[index].get("title") or f"Направление {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "program_photo",
+            "index": index,
+        }
+        message = (
+            f"Пришлите новое фото для направления «{title}».\n"
+            "Чтобы удалить изображение, напишите «Удалить».\n"
+            "Можно отправить ссылку (http…)."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_program_variant(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int, variant_index: int
+    ) -> None:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return
+        program = programs[index]
+        variants = self._program_variants(program)
+        if not 0 <= variant_index < len(variants):
+            await self._admin_show_program_variants(
+                update,
+                context,
+                index,
+                notice="Группа не найдена.",
+            )
+            return
+        title = program.get("title") or f"Направление {index + 1}"
+        current_button = variants[variant_index].get("button") or ""
+        current_stored = variants[variant_index].get("stored") or current_button
+        context.chat_data["pending_admin_action"] = {
+            "type": "variant_update",
+            "program_index": index,
+            "variant_index": variant_index,
+        }
+        message_parts = [
+            f"Введите новый текст для группы «{current_button or f'Группа {variant_index + 1}'}» направления «{title}».",
+            "Первая строка — подпись кнопки.",
+            "Вторая строка (необязательно) — название для таблиц и заявок.",
+        ]
+        if current_stored and current_stored != current_button:
+            message_parts.append(
+                f"Сейчас в таблицах используется формулировка: {current_stored}."
+            )
+        message = "\n".join(message_parts) + self.ADMIN_CANCEL_PROMPT
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_add_program(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        text: str,
+        attachments: list[MediaAttachment],
+    ) -> bool:
+        trimmed = text.strip()
+        if not trimmed:
+            await self._reply(
+                update,
+                "Пожалуйста, укажите название направления.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        lines = [line.strip() for line in trimmed.splitlines()]
+        title = lines[0]
+        if not title:
+            await self._reply(
+                update,
+                "Название не может быть пустым.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        body = "\n".join(line for line in lines[1:] if line).strip()
+        programs = self._program_catalog()
+        existing_ids = {
+            str(item.get("id", ""))
+            for item in programs
+            if isinstance(item, dict) and item.get("id")
+        }
+        new_id = self._generate_catalog_identifier("prog", existing_ids)
+        photo_file_id = self._select_photo_file_id(attachments)
+        programs.append(
+            {
+                "id": new_id,
+                "title": title,
+                "body": body,
+                "photo_file_id": photo_file_id or "",
+                "photo_url": "",
+                "code": "",
+            }
+        )
+        self._save_persistent_state()
+        await self._admin_show_about_menu(
+            update,
+            context,
+            notice=f"Направление «{title}» добавлено.",
+        )
+        return True
+
+    async def _admin_rename_program(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+    ) -> bool:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return True
+        trimmed = text.strip()
+        if not trimmed:
+            await self._reply(
+                update,
+                "Название не может быть пустым.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        programs[index]["title"] = trimmed
+        self._save_persistent_state()
+        await self._admin_show_program_detail(
+            update,
+            context,
+            index,
+            notice="Название обновлено.",
+        )
+        return True
+
+    async def _admin_update_program_body(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+    ) -> bool:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return True
+        trimmed = text.strip()
+        lower = trimmed.lower()
+        if trimmed and lower not in {"удалить", "нет", "очистить", "-"}:
+            programs[index]["body"] = trimmed
+            notice = "Описание обновлено."
+        elif lower in {"удалить", "нет", "очистить", "-"}:
+            programs[index]["body"] = ""
+            notice = "Описание очищено."
+        else:
+            await self._reply(
+                update,
+                "Отправьте текст описания или напишите «Удалить».",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        self._save_persistent_state()
+        await self._admin_show_program_detail(
+            update,
+            context,
+            index,
+            notice=notice,
+        )
+        return True
+
+    async def _admin_update_program_photo(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+        attachments: list[MediaAttachment],
+    ) -> bool:
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return True
+        program = programs[index]
+        trimmed = text.strip()
+        lower = trimmed.lower()
+        photo_file_id = self._select_photo_file_id(attachments)
+        notice: str
+        if photo_file_id:
+            program["photo_file_id"] = photo_file_id
+            program["photo_url"] = ""
+            notice = "Фото обновлено."
+        elif trimmed.startswith("http"):
+            program["photo_file_id"] = ""
+            program["photo_url"] = trimmed
+            notice = "Ссылка на фото обновлена."
+        elif lower in {"удалить", "нет", "очистить", "-"}:
+            program["photo_file_id"] = ""
+            program["photo_url"] = ""
+            notice = "Фото удалено."
+        else:
+            await self._reply(
+                update,
+                "Пришлите фото, ссылку или напишите «Удалить».",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        self._save_persistent_state()
+        await self._admin_show_program_detail(
+            update,
+            context,
+            index,
+            notice=notice,
+        )
+        return True
+
+    async def _admin_update_program_variant(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        program_index: int,
+        variant_index: int,
+        *,
+        text: str,
+    ) -> bool:
+        programs = self._program_catalog()
+        if not 0 <= program_index < len(programs):
+            await self._admin_show_about_menu(update, context, notice="Направление не найдено.")
+            return True
+        program = programs[program_index]
+        variants = self._program_variants(program)
+        if not 0 <= variant_index < len(variants):
+            await self._admin_show_program_variants(
+                update,
+                context,
+                program_index,
+                notice="Группа не найдена.",
+                prefer_edit=True,
+            )
+            return True
+
+        trimmed = text.strip()
+        if not trimmed:
+            await self._reply(
+                update,
+                "Пожалуйста, отправьте новый текст для группы.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+
+        lines = [line.strip() for line in trimmed.splitlines() if line.strip()]
+        button_label = lines[0]
+        stored_label = lines[1] if len(lines) > 1 else lines[0]
+
+        program.setdefault("variants", [])
+        program_variants = program["variants"]
+        if not isinstance(program_variants, list):
+            program_variants = []
+            program["variants"] = program_variants
+
+        while len(program_variants) < len(variants):
+            program_variants.append({"button": "", "stored": ""})
+
+        program_variants[variant_index] = {
+            "button": button_label,
+            "stored": stored_label or button_label,
+        }
+
+        self._save_persistent_state()
+        await self._admin_show_program_variants(
+            update,
+            context,
+            program_index,
+            notice="Группа обновлена.",
+            prefer_edit=True,
+        )
+        return True
+
+    async def _admin_delete_program(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+    ) -> None:
+        programs = self._program_catalog()
+        prefer_edit = update.callback_query is not None
+        if not 0 <= index < len(programs):
+            await self._admin_show_about_menu(
+                update,
+                context,
+                notice="Направление не найдено.",
+                prefer_edit=prefer_edit,
+            )
+            return
+        removed = programs.pop(index)
+        title = removed.get("title") or "Направление"
+        self._save_persistent_state()
+        await self._admin_show_about_menu(
+            update,
+            context,
+            notice=f"«{title}» удалено.",
+            prefer_edit=prefer_edit,
+        )
+
+    async def _admin_show_teachers_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        notice: Optional[str] = None,
+        prefer_edit: bool = False,
+    ) -> None:
+        teachers = self._teacher_directory()
+        lines: list[str] = []
+        if notice:
+            lines.append(notice)
+            lines.append("")
+        lines.append("Управление разделом «Преподаватели».")
+        if teachers:
+            lines.append("Выберите педагога для редактирования или добавьте нового.")
+        else:
+            lines.append("Список преподавателей пуст — добавьте новую запись.")
+        keyboard: list[list[InlineKeyboardButton]] = [
+            [InlineKeyboardButton("📝 Редактировать вступление", callback_data="admin_teacher:intro")],
+            [InlineKeyboardButton("➕ Добавить преподавателя", callback_data="admin_teacher:add")],
+        ]
+        for index, teacher in enumerate(teachers):
+            name = teacher.get("name") or f"Педагог {index + 1}"
+            keyboard.append(
+                [InlineKeyboardButton(name, callback_data=f"admin_teacher:edit:{index}")]
+            )
+        keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data="admin_teacher:back")])
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            prefer_edit=prefer_edit or update.callback_query is not None,
+        )
+
+    async def _admin_show_teacher_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        notice: Optional[str] = None,
+        prefer_edit: bool = False,
+    ) -> None:
+        teachers = self._teacher_directory()
+        effective_prefer_edit = prefer_edit or update.callback_query is not None
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(
+                update,
+                context,
+                notice="Преподаватель не найден.",
+                prefer_edit=effective_prefer_edit,
+            )
+            return
+        teacher = teachers[index]
+        name = teacher.get("name") or f"Педагог {index + 1}"
+        bio = str(teacher.get("bio", ""))
+        if teacher.get("photo_file_id"):
+            photo_note = "Используется загруженное фото."
+        elif teacher.get("photo_url"):
+            photo_note = "Используется ссылка на фото."
+        else:
+            photo_note = "Фото не добавлено."
+        lines: list[str] = []
+        if notice:
+            lines.append(notice)
+            lines.append("")
+        lines.append(f"Имя: {name}")
+        if bio.strip():
+            lines.append("")
+            lines.append(bio.strip())
+        else:
+            lines.append("")
+            lines.append("Описание пока не заполнено.")
+        lines.append("")
+        lines.append(f"📷 {photo_note}")
+        lines.append("")
+        lines.append("Выберите действие:")
+        keyboard = [
+            [InlineKeyboardButton("✏️ Изменить имя", callback_data=f"admin_teacher:rename:{index}")],
+            [InlineKeyboardButton("📝 Обновить описание", callback_data=f"admin_teacher:bio:{index}")],
+            [InlineKeyboardButton("🖼 Обновить фото", callback_data=f"admin_teacher:photo:{index}")],
+            [InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_teacher:delete:{index}")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="admin_teacher:menu")],
+        ]
+        await self._reply(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            prefer_edit=effective_prefer_edit,
+        )
+
+    async def _admin_prompt_add_teacher(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        context.chat_data["pending_admin_action"] = {"type": "add_teacher"}
+        message = (
+            "Отправьте информацию о новом преподавателе.\n"
+            "Первая строка — имя, далее описание.\n"
+            "Можно приложить фото."
+        )
+        await self._reply(
+            update,
+            message + self.ADMIN_CANCEL_PROMPT,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_teacher_rename(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return
+        name = teachers[index].get("name") or f"Педагог {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "rename_teacher",
+            "index": index,
+        }
+        message = (
+            f"Введите новое имя для преподавателя «{name}»."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_teacher_bio(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return
+        name = teachers[index].get("name") or f"Педагог {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "teacher_bio",
+            "index": index,
+        }
+        message = (
+            f"Отправьте новое описание для преподавателя «{name}».\n"
+            "Чтобы очистить описание, напишите «Удалить»."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_prompt_teacher_photo(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int
+    ) -> None:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return
+        name = teachers[index].get("name") or f"Педагог {index + 1}"
+        context.chat_data["pending_admin_action"] = {
+            "type": "teacher_photo",
+            "index": index,
+        }
+        message = (
+            f"Пришлите новое фото для преподавателя «{name}».\n"
+            "Чтобы удалить изображение, напишите «Удалить».\n"
+            "Можно отправить ссылку (http…)."
+            + self.ADMIN_CANCEL_PROMPT
+        )
+        await self._reply(
+            update,
+            message,
+            reply_markup=self._admin_action_keyboard(),
+        )
+
+    async def _admin_add_teacher(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        text: str,
+        attachments: list[MediaAttachment],
+    ) -> bool:
+        trimmed = text.strip()
+        if not trimmed:
+            await self._reply(
+                update,
+                "Пожалуйста, укажите имя преподавателя.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        lines = [line.strip() for line in trimmed.splitlines()]
+        name = lines[0]
+        if not name:
+            await self._reply(
+                update,
+                "Имя не может быть пустым.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        bio = "\n".join(line for line in lines[1:] if line).strip()
+        teachers = self._teacher_directory()
+        existing_ids = {
+            str(item.get("id", ""))
+            for item in teachers
+            if isinstance(item, dict) and item.get("id")
+        }
+        new_id = self._generate_catalog_identifier("teacher", existing_ids)
+        photo_file_id = self._select_photo_file_id(attachments)
+        teachers.append(
+            {
+                "id": new_id,
+                "name": name,
+                "bio": bio,
+                "photo_file_id": photo_file_id or "",
+                "photo_url": "",
+            }
+        )
+        self._save_persistent_state()
+        await self._admin_show_teachers_menu(
+            update,
+            context,
+            notice=f"Преподаватель «{name}» добавлен.",
+        )
+        return True
+
+    async def _admin_rename_teacher(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+    ) -> bool:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return True
+        trimmed = text.strip()
+        if not trimmed:
+            await self._reply(
+                update,
+                "Имя не может быть пустым.",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        teachers[index]["name"] = trimmed
+        self._save_persistent_state()
+        await self._admin_show_teacher_detail(
+            update,
+            context,
+            index,
+            notice="Имя обновлено.",
+        )
+        return True
+
+    async def _admin_update_teacher_bio(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+    ) -> bool:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return True
+        trimmed = text.strip()
+        lower = trimmed.lower()
+        if trimmed and lower not in {"удалить", "нет", "очистить", "-"}:
+            teachers[index]["bio"] = trimmed
+            notice = "Описание обновлено."
+        elif lower in {"удалить", "нет", "очистить", "-"}:
+            teachers[index]["bio"] = ""
+            notice = "Описание очищено."
+        else:
+            await self._reply(
+                update,
+                "Отправьте текст описания или напишите «Удалить».",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        self._save_persistent_state()
+        await self._admin_show_teacher_detail(
+            update,
+            context,
+            index,
+            notice=notice,
+        )
+        return True
+
+    async def _admin_update_teacher_photo(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+        *,
+        text: str,
+        attachments: list[MediaAttachment],
+    ) -> bool:
+        teachers = self._teacher_directory()
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(update, context, notice="Преподаватель не найден.")
+            return True
+        teacher = teachers[index]
+        trimmed = text.strip()
+        lower = trimmed.lower()
+        photo_file_id = self._select_photo_file_id(attachments)
+        notice: str
+        if photo_file_id:
+            teacher["photo_file_id"] = photo_file_id
+            teacher["photo_url"] = ""
+            notice = "Фото обновлено."
+        elif trimmed.startswith("http"):
+            teacher["photo_file_id"] = ""
+            teacher["photo_url"] = trimmed
+            notice = "Ссылка на фото обновлена."
+        elif lower in {"удалить", "нет", "очистить", "-"}:
+            teacher["photo_file_id"] = ""
+            teacher["photo_url"] = ""
+            notice = "Фото удалено."
+        else:
+            await self._reply(
+                update,
+                "Пришлите фото, ссылку или напишите «Удалить».",
+                reply_markup=self._admin_action_keyboard(),
+            )
+            return False
+        self._save_persistent_state()
+        await self._admin_show_teacher_detail(
+            update,
+            context,
+            index,
+            notice=notice,
+        )
+        return True
+
+    async def _admin_delete_teacher(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        index: int,
+    ) -> None:
+        teachers = self._teacher_directory()
+        prefer_edit = update.callback_query is not None
+        if not 0 <= index < len(teachers):
+            await self._admin_show_teachers_menu(
+                update,
+                context,
+                notice="Преподаватель не найден.",
+                prefer_edit=prefer_edit,
+            )
+            return
+        removed = teachers.pop(index)
+        name = removed.get("name") or "Преподаватель"
+        self._save_persistent_state()
+        await self._admin_show_teachers_menu(
+            update,
+            context,
+            notice=f"«{name}» удалён.",
+            prefer_edit=prefer_edit,
+        )
+
+    async def _admin_about_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+        if not self._is_admin_update(update, context):
+            await query.answer("Недоступно.", show_alert=True)
+            return
+        parts = (query.data or "").split(":")
+        action = parts[1] if len(parts) > 1 else ""
+        argument = parts[2] if len(parts) > 2 else ""
+        extra = parts[3] if len(parts) > 3 else ""
+
+        def _parse_index(token: str) -> Optional[int]:
+            try:
+                return int(token)
+            except (TypeError, ValueError):
+                return None
+
+        if action == "intro":
+            await query.answer()
+            await self._prompt_admin_content_edit(
+                update,
+                context,
+                field="about",
+                instruction="Отправьте обновлённый блок «О студии» (текст, фото, видео)."
+                + self.ADMIN_CANCEL_PROMPT,
+            )
+            return
+        if action == "add":
+            await query.answer()
+            await self._admin_prompt_add_program(update, context)
+            return
+        if action == "edit":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось открыть направление.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_show_program_detail(update, context, index, prefer_edit=True)
+            return
+        if action == "variants":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось открыть список групп.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_show_program_variants(update, context, index, prefer_edit=True)
+            return
+        if action == "variant":
+            index = _parse_index(argument)
+            variant_index = _parse_index(extra)
+            if index is None or variant_index is None:
+                await query.answer("Не удалось определить группу.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_program_variant(update, context, index, variant_index)
+            return
+        if action == "rename":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить направление.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_program_rename(update, context, index)
+            return
+        if action == "body":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить направление.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_program_body(update, context, index)
+            return
+        if action == "photo":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить направление.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_program_photo(update, context, index)
+            return
+        if action == "delete":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить направление.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_delete_program(update, context, index)
+            return
+        if action == "menu":
+            await query.answer()
+            await self._admin_show_about_menu(update, context, prefer_edit=True)
+            return
+        if action == "back":
+            await query.answer()
+            await self._reply(
+                update,
+                "Выберите раздел админ-панели.",
+                reply_markup=self._admin_menu_markup(),
+                prefer_edit=True,
+            )
+            return
+        await query.answer("Действие недоступно.", show_alert=True)
+
+    async def _admin_teacher_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+        if not self._is_admin_update(update, context):
+            await query.answer("Недоступно.", show_alert=True)
+            return
+        parts = (query.data or "").split(":")
+        action = parts[1] if len(parts) > 1 else ""
+        argument = parts[2] if len(parts) > 2 else ""
+
+        def _parse_index(token: str) -> Optional[int]:
+            try:
+                return int(token)
+            except (TypeError, ValueError):
+                return None
+
+        if action == "intro":
+            await query.answer()
+            await self._prompt_admin_content_edit(
+                update,
+                context,
+                field="teachers",
+                instruction="Поделитесь новым описанием преподавателей и медиа."
+                + self.ADMIN_CANCEL_PROMPT,
+            )
+            return
+        if action == "add":
+            await query.answer()
+            await self._admin_prompt_add_teacher(update, context)
+            return
+        if action == "edit":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось открыть карточку преподавателя.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_show_teacher_detail(update, context, index, prefer_edit=True)
+            return
+        if action == "rename":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить преподавателя.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_teacher_rename(update, context, index)
+            return
+        if action == "bio":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить преподавателя.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_teacher_bio(update, context, index)
+            return
+        if action == "photo":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить преподавателя.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_prompt_teacher_photo(update, context, index)
+            return
+        if action == "delete":
+            index = _parse_index(argument)
+            if index is None:
+                await query.answer("Не удалось определить преподавателя.", show_alert=True)
+                return
+            await query.answer()
+            await self._admin_delete_teacher(update, context, index)
+            return
+        if action == "menu":
+            await query.answer()
+            await self._admin_show_teachers_menu(update, context, prefer_edit=True)
+            return
+        if action == "back":
+            await query.answer()
+            await self._reply(
+                update,
+                "Выберите раздел админ-панели.",
+                reply_markup=self._admin_menu_markup(),
+                prefer_edit=True,
+            )
+            return
+        await query.answer("Действие недоступно.", show_alert=True)
 
     # ------------------------------------------------------------------
     # Menu handlers
@@ -2898,31 +4944,12 @@ class ConfettiTelegramBot:
                 )
                 return
             if command_text == self.ADMIN_EDIT_ABOUT_BUTTON:
-                await self._prompt_admin_content_edit(
-                    update,
-                    context,
-                    field="about",
-                    instruction="Отправьте обновлённый блок «О студии» (текст, фото, видео)."
-                    + self.ADMIN_CANCEL_PROMPT,
-                )
+                context.chat_data.pop("pending_admin_action", None)
+                await self._admin_show_about_menu(update, context)
                 return
             if command_text == self.ADMIN_EDIT_TEACHERS_BUTTON:
-                await self._prompt_admin_content_edit(
-                    update,
-                    context,
-                    field="teachers",
-                    instruction="Поделитесь новым описанием преподавателей и медиа."
-                    + self.ADMIN_CANCEL_PROMPT,
-                )
-                return
-            if command_text == self.ADMIN_EDIT_ALBUM_BUTTON:
-                await self._prompt_admin_content_edit(
-                    update,
-                    context,
-                    field="album",
-                    instruction="Отправьте ссылку или материалы для фотоальбома."
-                    + self.ADMIN_CANCEL_PROMPT,
-                )
+                context.chat_data.pop("pending_admin_action", None)
+                await self._admin_show_teachers_menu(update, context)
                 return
             if command_text == self.ADMIN_EDIT_CONTACTS_BUTTON:
                 await self._prompt_admin_content_edit(
@@ -2977,6 +5004,90 @@ class ConfettiTelegramBot:
                     "Не удалось определить редактируемый блок.",
                     reply_markup=self._admin_menu_markup(),
                 )
+            return
+        if action_type == "add_program":
+            if await self._admin_add_program(update, context, text=text, attachments=attachments):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "rename_program":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_rename_program(update, context, index, text=text):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "program_body":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_update_program_body(update, context, index, text=text):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "program_photo":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_update_program_photo(
+                update,
+                context,
+                index,
+                text=text,
+                attachments=attachments,
+            ):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "variant_update":
+            program_index = pending.get("program_index")
+            variant_index = pending.get("variant_index")
+            if (
+                isinstance(program_index, int)
+                and isinstance(variant_index, int)
+                and await self._admin_update_program_variant(
+                    update,
+                    context,
+                    program_index,
+                    variant_index,
+                    text=text,
+                )
+            ):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "add_teacher":
+            if await self._admin_add_teacher(update, context, text=text, attachments=attachments):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "rename_teacher":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_rename_teacher(update, context, index, text=text):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "teacher_bio":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_update_teacher_bio(update, context, index, text=text):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
+            return
+        if action_type == "teacher_photo":
+            index = pending.get("index")
+            if isinstance(index, int) and await self._admin_update_teacher_photo(
+                update,
+                context,
+                index,
+                text=text,
+                attachments=attachments,
+            ):
+                context.chat_data.pop("pending_admin_action", None)
+            else:
+                context.chat_data["pending_admin_action"] = pending
             return
         if action_type == "manage_admins":
             await self._admin_manage_admins(update, context, text)
@@ -3214,11 +5325,22 @@ class ConfettiTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         await self._purge_expired_registrations(context)
-        registrations = self._application_data(context).get("registrations", [])
-        if not isinstance(registrations, list) or not registrations:
+        registrations_data = self._application_data(context).get("registrations", [])
+        if not isinstance(registrations_data, list):
+            registrations = []
+        else:
+            registrations = [item for item in registrations_data if isinstance(item, dict)]
+
+        payments_data = self._application_data(context).get("payments", [])
+        if not isinstance(payments_data, list):
+            payments = []
+        else:
+            payments = [item for item in payments_data if isinstance(item, dict)]
+
+        if not registrations and not payments:
             await self._reply(
                 update,
-                "Заявок пока нет.",
+                "Заявок и сообщений об оплате пока нет.",
                 reply_markup=self._admin_menu_markup(),
             )
             return
@@ -3229,24 +5351,43 @@ class ConfettiTelegramBot:
             registrations,
             bot_username=bot_username,
         )
-        export_path, generated_at = self._export_registrations_excel(
+        _export_path, generated_at = self._export_registrations_excel(
             context,
             table_rows,
         )
-        sheet_result = await self._sync_google_sheet(table_rows)
+        sheet_result = await self._sync_google_sheet(
+            table_rows,
+            kind="registrations",
+            column_widths=self.REGISTRATION_EXPORT_COLUMN_WIDTHS,
+        )
+        payment_rows = self._build_payment_report_table_rows(
+            payments,
+            bot_username=bot_username,
+        )
+        _payments_export_path, payments_generated_at = self._export_payments_excel(
+            context,
+            payment_rows,
+        )
+        payments_sheet_result = await self._sync_google_sheet(
+            payment_rows,
+            kind="payments",
+            column_widths=self.PAYMENT_EXPORT_COLUMN_WIDTHS,
+            spreadsheet_env=self.PAYMENTS_SPREADSHEET_ENV,
+            default_spreadsheet_id=self.DEFAULT_PAYMENTS_SPREADSHEET_ID,
+        )
         preview_lines = self._format_registrations_preview(registrations)
 
         message_parts = [
-            "📊 Экспорт заявок готов!\n",
-            f"🗂 Всего записей: {len(registrations)}",
-            f"🕒 Обновлено: {generated_at}",
+            "📊 Экспорт данных готов!\n",
+            f"🗂 Заявок: {len(registrations)} (обновлено {generated_at})",
+            f"💳 Сообщений об оплате: {len(payments)} (обновлено {payments_generated_at})",
         ]
         if preview_lines:
             message_parts.append("")
             message_parts.extend(preview_lines)
         if sheet_result.url:
             message_parts.append("")
-            message_parts.append(f"🌐 Живая таблица: {sheet_result.url}")
+            message_parts.append(f"🌐 Таблица заявок: {sheet_result.url}")
             if sheet_result.updated:
                 message_parts.append(
                     "Таблица обновлена автоматически и содержит актуальные данные."
@@ -3260,10 +5401,22 @@ class ConfettiTelegramBot:
             message_parts.append(
                 "⚠️ Облачная таблица недоступна: проверьте настройки сервисного аккаунта."
             )
-        message_parts.append("")
-        message_parts.append(
-            "🔗 В столбце «Фото оплаты» размещены кликабельные ссылки на подтверждения платежей."
-        )
+        if payments_sheet_result.url:
+            message_parts.append("")
+            message_parts.append(f"💳 Таблица оплат: {payments_sheet_result.url}")
+            if payments_sheet_result.updated:
+                message_parts.append(
+                    "Таблица оплат обновлена автоматически."
+                )
+            else:
+                message_parts.append(
+                    "⚠️ Не удалось обновить таблицу оплат автоматически."
+                )
+        else:
+            message_parts.append("")
+            message_parts.append(
+                "⚠️ Облачная таблица оплат недоступна: проверьте настройки сервисного аккаунта."
+            )
 
         await self._reply(
             update,
@@ -3281,11 +5434,11 @@ class ConfettiTelegramBot:
             "Дата заявки",
             "Программа",
             "Участник",
-            "Класс / возраст",
+            "Школа",
+            "Класс",
+            "Контактное лицо",
             "Телефон",
-            "Предпочтительное время",
-            "Фото оплаты",
-            "Отправитель",
+            "Комментарий",
         )
 
         def make_cell(value: Any) -> _XlsxCell:
@@ -3300,25 +5453,62 @@ class ConfettiTelegramBot:
         ]
 
         for record in registrations:
-            payment_entries = self._dicts_to_attachments(record.get("payment_media"))
-            payment_note = record.get("payment_note") or ""
-            registration_id = str(record.get("id") or "")
-            photo_cell = self._build_payment_link_cell(
+            rows.append(
+                [
+                    make_cell(record.get("created_at") or ""),
+                    make_cell(record.get("program") or ""),
+                    make_cell(record.get("child_name") or ""),
+                    make_cell(record.get("school") or ""),
+                    make_cell(record.get("class") or ""),
+                    make_cell(record.get("contact_name") or ""),
+                    make_cell(record.get("phone") or ""),
+                    make_cell(record.get("comment") or ""),
+                ]
+            )
+
+        return rows
+
+    def _build_payment_report_table_rows(
+        self,
+        payments: list[dict[str, Any]],
+        *,
+        bot_username: Optional[str],
+    ) -> list[list[_XlsxCell]]:
+        header = (
+            "Дата сообщения",
+            "Направление",
+            "Ребёнок",
+            "Контактное лицо",
+            "Фото оплаты",
+            "Отправитель",
+        )
+
+        def make_cell(value: Any) -> _XlsxCell:
+            if isinstance(value, _XlsxCell):
+                return value
+            if value is None:
+                return _XlsxCell("")
+            return _XlsxCell(str(value))
+
+        rows: list[list[_XlsxCell]] = [[make_cell(title) for title in header]]
+
+        for record in payments:
+            attachments = self._dicts_to_attachments(record.get("attachments"))
+            payment_id = str(record.get("id") or "")
+            link_cell = self._build_payment_link_cell(
                 bot_username=bot_username,
-                registration_id=registration_id,
-                attachments=payment_entries,
-                payment_note=payment_note,
+                registration_id=payment_id,
+                attachments=attachments,
+                payment_note="",
             )
 
             rows.append(
                 [
                     make_cell(record.get("created_at") or ""),
                     make_cell(record.get("program") or ""),
-                    make_cell(record.get("child_name") or ""),
-                    make_cell(record.get("class") or ""),
-                    make_cell(record.get("phone") or ""),
-                    make_cell(record.get("time") or ""),
-                    make_cell(photo_cell),
+                    make_cell(record.get("child_name") or record.get("full_name") or ""),
+                    make_cell(record.get("contact_name") or record.get("full_name") or ""),
+                    make_cell(link_cell),
                     make_cell(record.get("submitted_by") or ""),
                 ]
             )
@@ -3332,7 +5522,7 @@ class ConfettiTelegramBot:
     ) -> tuple[Path, str]:
         builder = _SimpleXlsxBuilder(
             sheet_name="Заявки",
-            column_widths=self.EXPORT_COLUMN_WIDTHS,
+            column_widths=self.REGISTRATION_EXPORT_COLUMN_WIDTHS,
         )
 
         for row in table_rows:
@@ -3357,18 +5547,72 @@ class ConfettiTelegramBot:
 
         return export_path, generated_at
 
-    def _ensure_google_sheets_exporter(self) -> Optional["_GoogleSheetsExporter"]:
-        if self._google_sheets_exporter is not None:
-            return self._google_sheets_exporter
-        exporter = _GoogleSheetsExporter.from_env()
-        self._google_sheets_exporter = exporter
+    def _export_payments_excel(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        table_rows: Sequence[Sequence[_XlsxCell]],
+    ) -> tuple[Path, str]:
+        builder = _SimpleXlsxBuilder(
+            sheet_name="Оплаты",
+            column_widths=self.PAYMENT_EXPORT_COLUMN_WIDTHS,
+        )
+
+        for row in table_rows:
+            builder.add_row(row)
+
+        generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        export_path = Path("data") / "exports" / "confetti_payments.xlsx"
+        builder.to_file(export_path)
+
+        storage = self._application_data(context)
+        exports_meta = storage.setdefault("exports", {})
+        payments_meta = {
+            "generated_at": generated_at,
+            "path": str(export_path),
+        }
+        if isinstance(exports_meta, dict):
+            exports_meta["payments"] = payments_meta
+        else:
+            storage["exports"] = {"payments": payments_meta}
+
+        self._save_persistent_state()
+
+        return export_path, generated_at
+
+    def _ensure_google_sheets_exporter(
+        self,
+        *,
+        kind: str,
+        spreadsheet_id: Optional[str] = None,
+        spreadsheet_env: str = "CONFETTI_GOOGLE_SHEETS_ID",
+        default_spreadsheet_id: Optional[str] = None,
+    ) -> Optional["_GoogleSheetsExporter"]:
+        if kind in self._google_sheets_exporters:
+            return self._google_sheets_exporters[kind]
+        exporter = _GoogleSheetsExporter.from_env(
+            spreadsheet_id=spreadsheet_id,
+            spreadsheet_env=spreadsheet_env,
+            default_spreadsheet_id=default_spreadsheet_id,
+        )
+        self._google_sheets_exporters[kind] = exporter
         return exporter
 
     async def _sync_google_sheet(
         self,
         table_rows: Sequence[Sequence[_XlsxCell]],
+        *,
+        kind: str,
+        column_widths: Sequence[float],
+        spreadsheet_id: Optional[str] = None,
+        spreadsheet_env: str = "CONFETTI_GOOGLE_SHEETS_ID",
+        default_spreadsheet_id: Optional[str] = None,
     ) -> _GoogleSheetSyncResult:
-        exporter = self._ensure_google_sheets_exporter()
+        exporter = self._ensure_google_sheets_exporter(
+            kind=kind,
+            spreadsheet_id=spreadsheet_id,
+            spreadsheet_env=spreadsheet_env,
+            default_spreadsheet_id=default_spreadsheet_id,
+        )
         if exporter is None:
             return _GoogleSheetSyncResult(url=None, updated=False)
 
@@ -3378,25 +5622,25 @@ class ConfettiTelegramBot:
                 None,
                 exporter.sync,
                 table_rows,
-                tuple(self.EXPORT_COLUMN_WIDTHS),
+                tuple(column_widths),
             )
         except Exception as exc:  # pragma: no cover - network dependent
             LOGGER.warning("Не удалось обновить Google Sheets: %s", exc)
-            fallback_url = self._last_google_sheet_url or exporter.url
+            fallback_url = self._last_google_sheet_urls.get(kind) or exporter.url
             if fallback_url:
-                self._last_google_sheet_url = fallback_url
+                self._last_google_sheet_urls[kind] = fallback_url
             return _GoogleSheetSyncResult(url=fallback_url, updated=False, error=str(exc))
 
         if url:
-            self._last_google_sheet_url = url
+            self._last_google_sheet_urls[kind] = url
             return _GoogleSheetSyncResult(url=url, updated=True)
 
-        if self._last_google_sheet_url:
-            return _GoogleSheetSyncResult(url=self._last_google_sheet_url, updated=True)
+        if self._last_google_sheet_urls.get(kind):
+            return _GoogleSheetSyncResult(url=self._last_google_sheet_urls[kind], updated=True)
 
         fallback_url = exporter.url
         if fallback_url:
-            self._last_google_sheet_url = fallback_url
+            self._last_google_sheet_urls[kind] = fallback_url
         return _GoogleSheetSyncResult(url=fallback_url, updated=True)
 
     def _build_payment_link_cell(
@@ -3613,6 +5857,81 @@ class ConfettiTelegramBot:
 
         return True
 
+    async def _send_payment_report_media(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        payment_id: str,
+        *,
+        attachment_index: Optional[int] = None,
+    ) -> bool:
+        record = self._find_payment_report_by_id(context, payment_id)
+        if record is None:
+            await self._reply(
+                update,
+                "Не удалось найти подтверждение оплаты с таким идентификатором.",
+                reply_markup=self._admin_menu_markup(),
+            )
+            return False
+
+        attachments = self._dicts_to_attachments(record.get("attachments"))
+        if not attachments:
+            await self._reply(
+                update,
+                "Для этой записи нет сохранённых вложений.",
+                reply_markup=self._admin_menu_markup(),
+            )
+            return False
+
+        selected_attachments = attachments
+        if attachment_index is not None:
+            if 0 <= attachment_index < len(attachments):
+                selected_attachments = [attachments[attachment_index]]
+            else:
+                await self._reply(
+                    update,
+                    "Не удалось найти вложение с указанным номером.",
+                    reply_markup=self._admin_menu_markup(),
+                )
+                return False
+
+        summary_lines = [
+            "💳 Подтверждение оплаты",
+            f"📚 Направление: {record.get('program', '—')}",
+            f"👦 Ребёнок: {record.get('child_name', '—')}",
+            f"👤 Контактное лицо: {record.get('contact_name', '—')}",
+            f"🕒 Отправлено: {record.get('created_at', '—')}",
+            f"📎 Файлов: {len(attachments)}",
+        ]
+
+        if attachment_index is not None and len(attachments) > 1:
+            summary_lines.append(
+                f"🔍 Показан файл {attachment_index + 1} из {len(attachments)}"
+            )
+
+        chat = update.effective_chat
+        try:
+            chat_id = _coerce_chat_id_from_object(chat) if chat else None
+        except ValueError:
+            chat_id = None
+
+        if chat_id is None:
+            return False
+
+        try:
+            await self._send_payload_to_chat(
+                context,
+                chat_id,
+                text="\n".join(summary_lines),
+                media=selected_attachments,
+                reply_markup=self._admin_menu_markup(),
+            )
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Не удалось отправить вложения подтверждения %s: %s", payment_id, exc)
+            return False
+
+        return True
+
     def _extract_media_directives(self, text: str) -> tuple[str, list[MediaAttachment]]:
         if not text.strip():
             return text.strip(), []
@@ -3737,9 +6056,8 @@ class ConfettiTelegramBot:
             "📅 Расписание": self._send_schedule,
             "ℹ️ О студии": self._send_about,
             "👩‍🏫 Преподаватели": self._send_teachers,
-            self.REGISTRATION_LIST_BUTTON: self._send_registration_list,
             "📞 Контакты": self._send_contacts,
-            "📚 Полезные слова": self._send_vocabulary,
+            "📚 Слово дня": self._send_vocabulary,
         }
 
         handler = handlers.get(text)
@@ -3831,30 +6149,28 @@ class ConfettiTelegramBot:
         for index, record in enumerate(sorted_records, start=1):
             program = str(record.get("program", "")) or "Без программы"
             child = str(record.get("child_name", ""))
+            school = str(record.get("school", ""))
             grade = str(record.get("class", ""))
-            time_slot = str(record.get("time", ""))
+            contact = str(record.get("contact_name", ""))
+            phone = str(record.get("phone", ""))
+            comment = str(record.get("comment", ""))
             created_at = str(record.get("created_at", ""))
-            payment_note = str(record.get("payment_note", ""))
-            payment_media = record.get("payment_media") or []
 
             entry_lines = [f"{index}. {program}"]
-            details: list[str] = []
             if child:
-                details.append(child)
+                entry_lines.append(f"👦 {child}")
+            if school:
+                entry_lines.append(f"🏫 {school}")
             if grade:
-                details.append(f"класс: {grade}")
-            if time_slot:
-                details.append(f"время: {time_slot}")
-            if details:
-                entry_lines.append(" • ".join(details))
+                entry_lines.append(f"🎓 {grade}")
+            if contact:
+                entry_lines.append(f"👤 {contact}")
+            if phone:
+                entry_lines.append(f"📱 {phone}")
+            if comment:
+                entry_lines.append(f"📝 {comment}")
             if created_at:
                 entry_lines.append(f"📅 Заявка от: {created_at}")
-            if payment_media:
-                entry_lines.append("💳 Оплата: подтверждение во вложении")
-            elif payment_note:
-                entry_lines.append(f"💳 Оплата: {payment_note}")
-            else:
-                entry_lines.append("💳 Оплата: ожидается")
             lines.append("\n".join(entry_lines))
 
         text = "📋 Ваши заявки:\n\n" + "\n\n".join(lines)
@@ -3898,18 +6214,26 @@ class ConfettiTelegramBot:
             await query.answer("Не удалось открыть профиль.", show_alert=True)
             return
         key = data[1]
-        if key == "home":
+        if key == "back":
             await query.answer()
-            await self._send_teachers(update, context)
+            await self._reply(
+                update,
+                "Список преподавателей обновляется.",
+                reply_markup=self._teacher_inline_keyboard(),
+                prefer_edit=True,
+            )
             return
 
-        teacher = next((item for item in self.TEACHERS if item["key"] == key), None)
+        teachers = self._teacher_directory()
+        teacher = next((item for item in teachers if item.get("id") == key), None)
         if teacher is None:
             await query.answer("Педагог не найден.", show_alert=True)
             return
 
         await query.answer()
-        caption = f"{teacher['name']}\n\n{teacher['description']}"
+        name = teacher.get("name", "Преподаватель")
+        bio = teacher.get("bio") or teacher.get("description") or ""
+        caption = f"{name}\n\n{bio}".strip()
         keyboard = self._teacher_inline_keyboard()
         photo_reference = self._resolve_media_reference(
             teacher,
@@ -3953,23 +6277,34 @@ class ConfettiTelegramBot:
             return
 
         key = data[1]
-        if key == "home":
+        if key == "back":
             await query.answer()
             await self._send_about(update, context)
             return
-
         try:
             index = int(key)
         except ValueError:
             await query.answer("Неизвестное направление.", show_alert=True)
             return
 
-        if not 0 <= index < len(self.PROGRAMS):
+        programs = self._program_catalog()
+        if not 0 <= index < len(programs):
             await query.answer("Направление не найдено.", show_alert=True)
             return
 
-        program = self.PROGRAMS[index]
+        program = programs[index]
         await query.answer()
+
+        variants = self._program_variants(program)
+        if variants:
+            await self._about_prompt_french_variants(
+                update,
+                context,
+                program,
+                index,
+                variants=variants,
+            )
+            return
 
         overview = self._format_program_details(program)
         photo_reference = self._resolve_media_reference(
@@ -3997,6 +6332,124 @@ class ConfettiTelegramBot:
             update,
             overview + "\n\n",
             reply_markup=self._about_inline_keyboard(),
+            prefer_edit=True,
+        )
+
+    async def _about_prompt_french_variants(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        program: Dict[str, Any],
+        program_index: int,
+        *,
+        variants: Sequence[dict[str, str]],
+    ) -> None:
+        overview = self._format_program_details(program)
+        instruction = "Выберите подходящую группу:"
+        caption = overview.strip()
+        if caption:
+            caption = f"{caption}\n\n{instruction}"
+        else:
+            caption = instruction
+        photo_reference = self._resolve_media_reference(
+            program,
+            file_key="photo_file_id",
+            url_key="photo_url",
+        )
+        keyboard = self._about_french_variant_keyboard(program_index, variants)
+        if photo_reference:
+            await self._reply(
+                update,
+                text=None,
+                reply_markup=keyboard,
+                media=[
+                    MediaAttachment(
+                        kind="photo",
+                        file_id=photo_reference,
+                        caption=caption,
+                    )
+                ],
+                prefer_edit=True,
+            )
+            return
+
+        await self._reply(
+            update,
+            caption + "\n\n",
+            reply_markup=keyboard,
+            prefer_edit=True,
+        )
+
+    async def _about_show_french_variant(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+
+        payload = (query.data or "").split(":", 2)
+        if len(payload) < 2:
+            await query.answer("Не удалось определить группу.", show_alert=True)
+            return
+
+        action = payload[1]
+        if action == "back":
+            await query.answer()
+            await self._send_about(update, context)
+            return
+
+        if len(payload) != 3:
+            await query.answer("Не удалось определить группу.", show_alert=True)
+            return
+
+        try:
+            program_index = int(action)
+            variant_index = int(payload[2])
+        except ValueError:
+            await query.answer("Не удалось определить группу.", show_alert=True)
+            return
+
+        programs = self._program_catalog()
+        if not 0 <= program_index < len(programs):
+            await query.answer("Направление не найдено.", show_alert=True)
+            return
+
+        program = programs[program_index]
+        variants = self._program_variants(program)
+        if not 0 <= variant_index < len(variants):
+            await query.answer("Группа не найдена.", show_alert=True)
+            return
+
+        option = variants[variant_index]
+
+        full_title = self._compose_french_variant_label(str(program.get("title", "")), option)
+        body = str(program.get("body", "")).strip()
+        caption = full_title.strip()
+        if body:
+            caption = f"{caption}\n\n{body}" if caption else body
+
+        photo_reference = self._resolve_media_reference(
+            program,
+            file_key="photo_file_id",
+            url_key="photo_url",
+        )
+        keyboard = self._about_french_variant_keyboard(program_index, variants)
+
+        await self._reply(
+            update,
+            text=None if photo_reference else caption + "\n\n",
+            reply_markup=keyboard,
+            media=(
+                [
+                    MediaAttachment(
+                        kind="photo",
+                        file_id=photo_reference,
+                        caption=caption,
+                    )
+                ]
+                if photo_reference
+                else None
+            ),
             prefer_edit=True,
         )
 
@@ -4033,11 +6486,23 @@ class UserProfile:
     """Representation of a standard chat profile."""
 
     chat_id: int
+    keyboard: list[list[str]] = field(default_factory=list)
     role: str = field(init=False, default="user")
 
     @property
     def is_admin(self) -> bool:
         return False
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "chat_id":
+            return self.chat_id
+        if key == "keyboard":
+            return self.keyboard
+        if key == "is_admin":
+            return self.is_admin
+        if key == "role":
+            return self.role
+        raise KeyError(key)
 
 
 @dataclass(frozen=True)
@@ -4372,7 +6837,13 @@ class _GoogleSheetsExporter:
         return self._service_account_email
 
     @classmethod
-    def from_env(cls) -> Optional["_GoogleSheetsExporter"]:
+    def from_env(
+        cls,
+        *,
+        spreadsheet_id: Optional[str] = None,
+        spreadsheet_env: str = "CONFETTI_GOOGLE_SHEETS_ID",
+        default_spreadsheet_id: Optional[str] = None,
+    ) -> Optional["_GoogleSheetsExporter"]:
         if (
             GoogleServiceAccountCredentials is None
             or google_build is None
@@ -4462,11 +6933,15 @@ class _GoogleSheetsExporter:
             LOGGER.warning("Некорректные данные сервисного аккаунта: %s", exc)
             return None
 
-        spreadsheet_id = os.environ.get("CONFETTI_GOOGLE_SHEETS_ID")
         if spreadsheet_id:
             spreadsheet_id = spreadsheet_id.strip()
         if not spreadsheet_id:
-            spreadsheet_id = cls.DEFAULT_SPREADSHEET_ID
+            env_candidate = os.environ.get(spreadsheet_env)
+            if env_candidate:
+                env_candidate = env_candidate.strip()
+            spreadsheet_id = env_candidate
+        if not spreadsheet_id:
+            spreadsheet_id = default_spreadsheet_id or cls.DEFAULT_SPREADSHEET_ID
 
         return cls(
             spreadsheet_id,
