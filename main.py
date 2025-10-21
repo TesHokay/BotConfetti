@@ -24,7 +24,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union
 from xml.sax.saxutils import escape
@@ -393,6 +393,10 @@ class ConfettiTelegramBot:
         "Интенсивы в каникулы",
     )
 
+    ADULT_PROGRAM_CODE = "adults"
+    ADULT_PROGRAM_ID = "prog-adults"
+    ADULT_PROGRAM_TITLE = "🇫🇷 Французский по-взрослому"
+
     DEFAULT_PROGRAMS: tuple[dict[str, str], ...] = (
         {
             "id": "prog-french",
@@ -417,8 +421,8 @@ class ConfettiTelegramBot:
             "photo_url": "https://storage.yandexcloud.net/bigbob/photo_2025-09-29_16-01-53(1).jpg",
         },
         {
-            "id": "prog-adults",
-            "title": "🇫🇷 Французский по-взрослому",
+            "id": ADULT_PROGRAM_ID,
+            "title": ADULT_PROGRAM_TITLE,
             "body": (
                 "Курс для тех, кто уже влюблён во французский. Углубляем"
                 " грамматику, отрабатываем разговорные ситуации и готовимся к"
@@ -426,6 +430,7 @@ class ConfettiTelegramBot:
                 "Дни занятий: понедельник / четверг / пятница."
             ),
             "photo_url": "https://storage.yandexcloud.net/bigbob/vzros.png",
+            "code": ADULT_PROGRAM_CODE,
         },
         {
             "id": "prog-individual",
@@ -759,6 +764,13 @@ class ConfettiTelegramBot:
         photo_file_id = str(item.get("photo_file_id", "") or "").strip()
         photo_url = str(item.get("photo_url", "") or "").strip()
         code = str(item.get("code", "") or "").strip()
+        if not code:
+            if identifier_candidate == self.ADULT_PROGRAM_ID:
+                code = self.ADULT_PROGRAM_CODE
+                dirty = True
+            elif title == self.ADULT_PROGRAM_TITLE:
+                code = self.ADULT_PROGRAM_CODE
+                dirty = True
 
         variants_value = item.get("variants")
         variants: list[dict[str, str]] = []
@@ -951,6 +963,31 @@ class ConfettiTelegramBot:
                     continue
                 result.append({"button": button, "stored": stored or button})
         return result
+
+    def _is_adult_program_entry(self, program: Optional[Mapping[str, Any]]) -> bool:
+        if not isinstance(program, Mapping):
+            return False
+        code = str(program.get("code", "") or "").strip().lower()
+        if code == self.ADULT_PROGRAM_CODE:
+            return True
+        identifier = str(program.get("id", "") or "").strip()
+        if identifier == self.ADULT_PROGRAM_ID:
+            return True
+        title = str(program.get("title", "") or "").strip()
+        return title == self.ADULT_PROGRAM_TITLE
+
+    def _is_adult_registration(self, registration: Mapping[str, Any]) -> bool:
+        code = str(registration.get("program_code", "") or "").strip().lower()
+        if code == self.ADULT_PROGRAM_CODE:
+            return True
+        identifier = str(registration.get("program_id", "") or "").strip()
+        if identifier == self.ADULT_PROGRAM_ID:
+            return True
+        program_label = str(registration.get("program", "") or "").strip()
+        if program_label == self.ADULT_PROGRAM_TITLE:
+            return True
+        base_label = str(registration.get("program_base", "") or "").strip()
+        return base_label == self.ADULT_PROGRAM_TITLE
 
     def _teacher_directory(self) -> list[dict[str, Any]]:
         teachers = self._persistent_store.get("teachers")
@@ -1975,13 +2012,14 @@ class ConfettiTelegramBot:
         user = update.effective_user
         record_id = data.get("id") or self._generate_registration_id()
         program_label = str(data.get("program", ""))
+        is_adult = self._is_adult_registration(data)
 
         record = {
             "id": record_id,
             "program": program_label,
             "child_name": data.get("child_name", ""),
-            "school": data.get("school", ""),
-            "class": data.get("class", ""),
+            "school": "" if is_adult else data.get("school", ""),
+            "class": "" if is_adult else data.get("class", ""),
             "contact_name": data.get("contact_name", ""),
             "phone": data.get("phone", ""),
             "comment": data.get("comment", ""),
@@ -2803,7 +2841,10 @@ class ConfettiTelegramBot:
         if not defaults:
             return
         registration = context.user_data.setdefault("registration", {})
+        is_adult = self._is_adult_registration(registration)
         for key in ("child_name", "school", "class", "contact_name", "phone", "comment"):
+            if is_adult and key in {"school", "class"}:
+                continue
             value = defaults.get(key)
             if value and not registration.get(key):
                 registration[key] = value
@@ -2847,6 +2888,11 @@ class ConfettiTelegramBot:
 
         registration = context.user_data.setdefault("registration", {})
         registration.pop("teacher", None)
+        if selected_program is not None:
+            registration["program_id"] = str(selected_program.get("id", ""))
+            registration["program_code"] = str(selected_program.get("code", ""))
+            if not registration["program_code"] and self._is_adult_program_entry(selected_program):
+                registration["program_code"] = self.ADULT_PROGRAM_CODE
 
         variants = self._program_variants(selected_program)
 
@@ -2854,6 +2900,8 @@ class ConfettiTelegramBot:
             registration["program_base"] = program_label
             registration["program_variants"] = [dict(option) for option in variants]
             registration.pop("program", None)
+            if selected_program is not None and not registration.get("program_code"):
+                registration["program_code"] = str(selected_program.get("code", ""))
             await self._registration_prompt_french_variant(
                 update,
                 context,
@@ -2958,6 +3006,8 @@ class ConfettiTelegramBot:
             "program",
             "program_base",
             "program_variants",
+            "program_id",
+            "program_code",
             "teacher",
             "child_name",
             "school",
@@ -2974,15 +3024,26 @@ class ConfettiTelegramBot:
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
         program = registration.get("program", "направление")
+        is_adult = self._is_adult_registration(registration)
         if remind and registration.get("child_name"):
             message = (
-                f"Сейчас указано имя: {registration.get('child_name', '—')}.")
-            message += "\nВведите имя и фамилию ребёнка для записи."
+                f"Сейчас указано {('ФИО' if is_adult else 'имя')}: "
+                f"{registration.get('child_name', '—')}.")
+            if is_adult:
+                message += "\nВведите полное ФИО участника, который придёт на занятие."
+            else:
+                message += "\nВведите имя и фамилию ребёнка для записи."
         else:
-            message = (
-                f"Отлично! Напишите, пожалуйста, имя и фамилию ребёнка для "
-                f"участия в программе «{program}»."
-            )
+            if is_adult:
+                message = (
+                    "Отлично! Напишите, пожалуйста, фамилию, имя и отчество "
+                    f"участника, который придёт на занятие по программе «{program}»."
+                )
+            else:
+                message = (
+                    f"Отлично! Напишите, пожалуйста, имя и фамилию ребёнка для "
+                    f"участия в программе «{program}»."
+                )
         await self._reply(update, message, reply_markup=self._back_keyboard())
         return self.REGISTRATION_CHILD_NAME
 
@@ -2990,6 +3051,10 @@ class ConfettiTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
+        if self._is_adult_registration(registration):
+            registration.pop("school", None)
+            registration.pop("class", None)
+            return await self._registration_prompt_contact_name(update, context, remind=remind)
         child_name = registration.get("child_name", "—")
         if remind and registration.get("school"):
             message = (
@@ -3008,6 +3073,9 @@ class ConfettiTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, *, remind: bool = False
     ) -> int:
         registration = context.user_data.setdefault("registration", {})
+        if self._is_adult_registration(registration):
+            registration.pop("class", None)
+            return await self._registration_prompt_contact_name(update, context, remind=remind)
         child_name = registration.get("child_name", "—")
         school = registration.get("school", "—")
         if remind and registration.get("class"):
@@ -3093,6 +3161,8 @@ class ConfettiTelegramBot:
         for key in (
             "program",
             "program_base",
+            "program_id",
+            "program_code",
             "teacher",
             "child_name",
             "school",
@@ -3157,7 +3227,12 @@ class ConfettiTelegramBot:
             return await self._registration_cancel(update, context)
         if text == self.BACK_BUTTON:
             return await self._registration_back_to_program(update, context)
-        context.user_data.setdefault("registration", {})["child_name"] = text
+        registration = context.user_data.setdefault("registration", {})
+        registration["child_name"] = text
+        if self._is_adult_registration(registration):
+            registration.pop("school", None)
+            registration.pop("class", None)
+            return await self._registration_prompt_contact_name(update, context)
         return await self._registration_prompt_school(update, context)
 
     async def _registration_collect_school(
@@ -3189,8 +3264,12 @@ class ConfettiTelegramBot:
         if text == self.MAIN_MENU_BUTTON:
             return await self._registration_cancel(update, context)
         if text == self.BACK_BUTTON:
+            registration = context.user_data.setdefault("registration", {})
+            if self._is_adult_registration(registration):
+                return await self._registration_back_to_child_name(update, context)
             return await self._registration_back_to_class(update, context)
-        context.user_data.setdefault("registration", {})["contact_name"] = text
+        registration = context.user_data.setdefault("registration", {})
+        registration["contact_name"] = text
         return await self._registration_prompt_phone(update, context)
 
     def _back_keyboard(self, *, include_menu: bool = True) -> ReplyKeyboardMarkup:
@@ -3715,16 +3794,28 @@ class ConfettiTelegramBot:
         contact = data.get("contact_name", "—")
         phone = data.get("phone", "—")
         comment = data.get("comment", "—")
+        is_adult = self._is_adult_registration(data)
         summary_lines = [
             "Заявка отправлена!",
             "",
             f"📚 Программа: {program}",
-            f"👦 Ребёнок: {child}",
-            f"🏫 Школа: {school}",
-            f"🎓 Класс: {child_class}",
+        ]
+        if is_adult:
+            summary_lines.append(f"👤 Участник: {child}")
+        else:
+            summary_lines.extend(
+                [
+                    f"👦 Ребёнок: {child}",
+                    f"🏫 Школа: {school}",
+                    f"🎓 Класс: {child_class}",
+                ]
+            )
+        summary_lines.extend(
+            [
             f"👤 Контактное лицо: {contact}",
             f"📱 Телефон: {phone}",
-        ]
+            ]
+        )
         if comment and comment.strip():
             summary_lines.append(f"📝 Комментарий: {comment}")
         summary_lines.append("")
@@ -3740,12 +3831,23 @@ class ConfettiTelegramBot:
         admin_lines = [
             "🆕 Новая заявка",
             f"📚 Программа: {program}",
-            f"👦 Ребёнок: {child}",
-            f"🏫 Школа: {school}",
-            f"🎓 Класс: {child_class}",
+        ]
+        if is_adult:
+            admin_lines.append(f"👤 Участник: {child}")
+        else:
+            admin_lines.extend(
+                [
+                    f"👦 Ребёнок: {child}",
+                    f"🏫 Школа: {school}",
+                    f"🎓 Класс: {child_class}",
+                ]
+            )
+        admin_lines.extend(
+            [
             f"👤 Контактное лицо: {contact}",
             f"📱 Телефон: {phone}",
-        ]
+            ]
+        )
         if comment and comment.strip():
             admin_lines.append(f"📝 Комментарий: {comment}")
 
