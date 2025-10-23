@@ -649,6 +649,11 @@ class ConfettiTelegramBot:
         self._bot_username: Optional[str] = None
         self._google_sheets_exporters: dict[str, Optional[_GoogleSheetsExporter]] = {}
         self._last_google_sheet_urls: dict[str, Optional[str]] = {}
+        self._registration_conversation: Optional[ConversationHandler] = None
+        self._payment_conversation: Optional[ConversationHandler] = None
+        self._absence_conversation: Optional[ConversationHandler] = None
+        self._conversation_handlers: list[ConversationHandler] = []
+        self._menu_shortcut_pattern = self._build_main_menu_shortcut_pattern()
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -1554,6 +1559,8 @@ class ConfettiTelegramBot:
         with warnings.catch_warnings():
             if PTBUserWarning is not None:
                 warnings.simplefilter("ignore", PTBUserWarning)
+            shortcut_filter = filters.Regex(self._menu_shortcut_pattern)
+            registration_shortcut = self._conversation_shortcut_handler("registration")
             conversation = ConversationHandler(
                 entry_points=[
                     MessageHandler(
@@ -1579,6 +1586,7 @@ class ConfettiTelegramBot:
                             self._registration_cancel_from_program,
                             pattern=r"^reg_back:menu$",
                         ),
+                        MessageHandler(shortcut_filter, registration_shortcut),
                         MessageHandler(
                             filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                             self._registration_cancel,
@@ -1589,6 +1597,7 @@ class ConfettiTelegramBot:
                         ),
                     ],
                     self.REGISTRATION_CHILD_NAME: [
+                        MessageHandler(shortcut_filter, registration_shortcut),
                         MessageHandler(
                             filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                             self._registration_cancel,
@@ -1603,6 +1612,7 @@ class ConfettiTelegramBot:
                         ),
                     ],
                     self.REGISTRATION_SCHOOL: [
+                        MessageHandler(shortcut_filter, registration_shortcut),
                         MessageHandler(
                             filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                             self._registration_cancel,
@@ -1617,6 +1627,7 @@ class ConfettiTelegramBot:
                         ),
                     ],
                     self.REGISTRATION_CLASS: [
+                        MessageHandler(shortcut_filter, registration_shortcut),
                         MessageHandler(
                             filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                             self._registration_cancel,
@@ -1631,6 +1642,7 @@ class ConfettiTelegramBot:
                         ),
                     ],
                     self.REGISTRATION_CONTACT_NAME: [
+                        MessageHandler(shortcut_filter, registration_shortcut),
                         MessageHandler(
                             filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                             self._registration_cancel,
@@ -1645,6 +1657,7 @@ class ConfettiTelegramBot:
                         ),
                     ],
                     self.REGISTRATION_PHONE: [
+                        MessageHandler(shortcut_filter, registration_shortcut),
                         MessageHandler(
                             filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                             self._registration_cancel,
@@ -1659,6 +1672,7 @@ class ConfettiTelegramBot:
                         ),
                     ],
                     self.REGISTRATION_COMMENT: [
+                        MessageHandler(shortcut_filter, registration_shortcut),
                         MessageHandler(
                             filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                             self._registration_cancel,
@@ -1682,10 +1696,13 @@ class ConfettiTelegramBot:
                 ],
                 allow_reentry=True,
             )
+            self._registration_conversation = conversation
 
         with warnings.catch_warnings():
             if PTBUserWarning is not None:
                 warnings.simplefilter("ignore", PTBUserWarning)
+            payment_shortcut_filter = filters.Regex(self._menu_shortcut_pattern)
+            payment_shortcut = self._conversation_shortcut_handler("payment")
             payment_report = ConversationHandler(
                 entry_points=[
                     MessageHandler(
@@ -1703,12 +1720,14 @@ class ConfettiTelegramBot:
                         self._payment_report_cancel_from_program,
                         pattern=r"^pay_back:menu$",
                     ),
+                    MessageHandler(payment_shortcut_filter, payment_shortcut),
                     MessageHandler(
                         filters.TEXT & ~filters.COMMAND,
                         self._payment_report_prompt_program,
                     ),
                 ],
                 self.PAYMENT_REPORT_CHILD: [
+                    MessageHandler(payment_shortcut_filter, payment_shortcut),
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._payment_report_cancel,
@@ -1723,6 +1742,7 @@ class ConfettiTelegramBot:
                     ),
                 ],
                 self.PAYMENT_REPORT_CONTACT: [
+                    MessageHandler(payment_shortcut_filter, payment_shortcut),
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._payment_report_cancel,
@@ -1737,6 +1757,7 @@ class ConfettiTelegramBot:
                     ),
                 ],
                 self.PAYMENT_REPORT_MEDIA: [
+                    MessageHandler(payment_shortcut_filter, payment_shortcut),
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._payment_report_cancel,
@@ -1757,10 +1778,13 @@ class ConfettiTelegramBot:
                 ],
                 allow_reentry=True,
             )
+            self._payment_conversation = payment_report
 
         with warnings.catch_warnings():
             if PTBUserWarning is not None:
                 warnings.simplefilter("ignore", PTBUserWarning)
+            cancellation_shortcut_filter = filters.Regex(self._menu_shortcut_pattern)
+            cancellation_shortcut = self._conversation_shortcut_handler("cancellation")
             cancellation = ConversationHandler(
                 entry_points=[
                     MessageHandler(
@@ -1778,12 +1802,14 @@ class ConfettiTelegramBot:
                         self._cancellation_cancel_from_program,
                         pattern=r"^absence_back:menu$",
                     ),
+                    MessageHandler(cancellation_shortcut_filter, cancellation_shortcut),
                     MessageHandler(
                         filters.TEXT & ~filters.COMMAND,
                         self._cancellation_prompt_program,
                     ),
                 ],
                 self.CANCELLATION_CONTACT: [
+                    MessageHandler(cancellation_shortcut_filter, cancellation_shortcut),
                     MessageHandler(
                         filters.Regex(self._exact_match_regex(self.MAIN_MENU_BUTTON)),
                         self._cancellation_cancel,
@@ -1807,6 +1833,17 @@ class ConfettiTelegramBot:
                 ],
                 allow_reentry=True,
             )
+            self._absence_conversation = cancellation
+
+        self._conversation_handlers = [
+            handler
+            for handler in (
+                self._registration_conversation,
+                self._payment_conversation,
+                self._absence_conversation,
+            )
+            if handler is not None
+        ]
 
         application.add_handler(CommandHandler("start", self._start))
         application.add_handler(CommandHandler("menu", self._show_main_menu))
@@ -1823,6 +1860,113 @@ class ConfettiTelegramBot:
 
     def _exact_match_regex(self, text: str) -> str:
         return rf"^{re.escape(text)}$"
+
+    # ------------------------------------------------------------------
+    # Conversation shortcut helpers
+
+    def _build_main_menu_shortcut_pattern(self) -> str:
+        buttons: set[str] = {
+            self.REGISTRATION_BUTTON,
+            self.CANCELLATION_BUTTON,
+            self.PAYMENT_REPORT_BUTTON,
+            self.ADMIN_MENU_BUTTON,
+            self.ADMIN_BACK_TO_USER_BUTTON,
+        }
+        for row in self.MAIN_MENU_LAYOUT:
+            for label in row:
+                if not label:
+                    continue
+                buttons.add(str(label))
+        buttons.discard(self.MAIN_MENU_BUTTON)
+        escaped = [re.escape(button) for button in buttons if button]
+        if not escaped:
+            return r"^$"
+        escaped.sort(key=len, reverse=True)
+        pattern = "|".join(escaped)
+        return rf"^(?:{pattern})$"
+
+    def _conversation_shortcut_handler(self, source: str):
+        async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
+            return await self._handle_main_menu_shortcut(update, context, source=source)
+
+        return handler
+
+    def _cancel_active_conversations(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        context.user_data.pop("registration", None)
+        context.user_data.pop("payment_report", None)
+        context.user_data.pop("absence", None)
+        for handler in self._conversation_handlers:
+            if not hasattr(handler, "_get_key") or not hasattr(handler, "_update_state"):
+                continue
+            try:
+                key = handler._get_key(update)
+            except Exception:
+                continue
+            handler._update_state(handler.END, key)
+
+    def _activate_conversation(
+        self,
+        handler: Optional[ConversationHandler],
+        update: Update,
+        state: object,
+    ) -> None:
+        if handler is None or state in (None, ConversationHandler.END):
+            return
+        if not hasattr(handler, "_get_key") or not hasattr(handler, "_update_state"):
+            return
+        try:
+            key = handler._get_key(update)
+        except Exception:
+            return
+        handler._update_state(state, key)
+
+    async def _handle_main_menu_shortcut(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        source: str,
+    ) -> int | None:
+        message = update.message
+        if message is None:
+            return ConversationHandler.END
+        text = (message.text or "").strip()
+        if not text:
+            return ConversationHandler.END
+
+        self._cancel_active_conversations(update, context)
+
+        if text == self.MAIN_MENU_BUTTON:
+            await self._show_main_menu(update, context)
+            return ConversationHandler.END
+
+        if text == self.ADMIN_MENU_BUTTON:
+            await self._show_admin_menu(update, context)
+            return ConversationHandler.END
+
+        if text == self.ADMIN_BACK_TO_USER_BUTTON:
+            await self._show_main_menu(update, context)
+            return ConversationHandler.END
+
+        if text == self.REGISTRATION_BUTTON:
+            state = await self._start_registration(update, context)
+            self._activate_conversation(self._registration_conversation, update, state)
+            return state if source == "registration" else ConversationHandler.END
+
+        if text == self.PAYMENT_REPORT_BUTTON:
+            state = await self._start_payment_report(update, context)
+            self._activate_conversation(self._payment_conversation, update, state)
+            return state if source == "payment" else ConversationHandler.END
+
+        if text == self.CANCELLATION_BUTTON:
+            state = await self._start_cancellation(update, context)
+            self._activate_conversation(self._absence_conversation, update, state)
+            return state if source == "cancellation" else ConversationHandler.END
+
+        await self._handle_menu_selection(update, context)
+        return ConversationHandler.END
 
     # ------------------------------------------------------------------
     # Shared messaging helpers
